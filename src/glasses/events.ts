@@ -8,6 +8,8 @@ import { RESTAURANT_SUBCATEGORIES, getEnabledMenu } from '../state'
 import { t } from '../i18n'
 import { searchNearby } from '../api'
 import { calculateDistance } from '../utils/geo'
+import { isSerperAvailable, searchSerperPlaces, findMatchingRating } from '../serper'
+import { getCategoryLabel } from '../state'
 import { renderScreen } from './renderer'
 
 const SCROLL_COOLDOWN = 300
@@ -132,6 +134,30 @@ async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise
       )
     })
     places.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+
+    // Enrich with Google ratings via Serper (if API key available)
+    if (isSerperAvailable() && places.length > 0) {
+      try {
+        const catLabel = getCategoryLabel(category)
+        const query = `${catLabel} near me`
+        const serperResults = await searchSerperPlaces(
+          query,
+          state.userLocation!.lat,
+          state.userLocation!.lng,
+        )
+        if (serperResults.length > 0) {
+          for (const place of places) {
+            const match = findMatchingRating(place.name, serperResults)
+            if (match) {
+              place.rating = match.rating
+              place.userRatingsTotal = match.ratingCount
+            }
+          }
+        }
+      } catch {
+        // Serper enrichment is optional — silently skip on error
+      }
+    }
 
     state.places = places
   } catch (err) {
