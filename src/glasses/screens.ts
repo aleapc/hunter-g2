@@ -7,7 +7,7 @@ import {
   RebuildPageContainer,
 } from '@evenrealities/even_hub_sdk'
 import type { HunterState } from '../state'
-import { RESTAURANT_SUBCATEGORIES, getCategoryLabel, getSubcategoryLabel, getEnabledMenu } from '../state'
+import { RESTAURANT_SUBCATEGORIES, getCategoryLabel, getCategoryDisplayLabel, getSubcategoryLabel, getEnabledMenu } from '../state'
 import { formatDistance, formatRating, formatPriceLevel, truncate } from '../utils/format'
 import { getCardinalDirection, getDirectionArrow } from '../utils/geo'
 import { t } from '../i18n'
@@ -87,7 +87,7 @@ export function renderCategories(
   const locationLabel = state.userLocation?.label ?? 'GPS'
   const header = makeHeader(`HUNTER  ${locationLabel}`)
   const menu = getEnabledMenu(state)
-  const items = menu.map((c) => t(c.labelKey))
+  const items = menu.map((c) => getCategoryDisplayLabel(c))
   const list = makeListContainer(items, {
     containerID: 1,
     containerName: 'catlist',

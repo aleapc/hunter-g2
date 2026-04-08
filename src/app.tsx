@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk'
 import type { HunterState, UserLocation, PlaceCategory } from './state'
-import { ALL_CATEGORIES } from './state'
+import { ALL_CATEGORIES, getCategoryDisplayLabel } from './state'
 import { getUserLocation } from './utils/geo'
 import { renderScreen } from './glasses/renderer'
 import { t } from './i18n'
@@ -188,43 +188,61 @@ export function App({ bridge, state }: AppProps) {
 
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>{t('categories_edit')}</h2>
+
+        {/* Active categories - reorder and remove */}
         <ul style={styles.list}>
-          {ALL_CATEGORIES.map((c) => {
-            const enabled = enabledCats.includes(c.category)
-            const idx = enabledCats.indexOf(c.category)
+          {enabledCats.map((cat, idx) => {
+            const item = ALL_CATEGORIES.find((c) => c.category === cat)
+            const label = item ? getCategoryDisplayLabel(item) : cat
             return (
-              <li key={c.category} style={{ ...styles.catRow, opacity: enabled ? 1 : 0.4 }}>
-                <label style={styles.catLabel}>
-                  <input
-                    type="checkbox"
-                    checked={enabled}
-                    onChange={() => toggleCategory(c.category)}
-                    style={styles.checkbox}
-                  />
-                  {t(c.labelKey)}
-                </label>
-                {enabled && (
-                  <span style={styles.catButtons}>
-                    <button
-                      onClick={() => moveCategory(c.category, -1)}
-                      disabled={idx === 0}
-                      style={styles.moveBtn}
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => moveCategory(c.category, 1)}
-                      disabled={idx === enabledCats.length - 1}
-                      style={styles.moveBtn}
-                    >
-                      ▼
-                    </button>
-                  </span>
-                )}
+              <li key={cat} style={styles.catRow}>
+                <span style={styles.catLabel}>{label}</span>
+                <span style={styles.catButtons}>
+                  <button
+                    onClick={() => moveCategory(cat, -1)}
+                    disabled={idx === 0}
+                    style={styles.moveBtn}
+                  >▲</button>
+                  <button
+                    onClick={() => moveCategory(cat, 1)}
+                    disabled={idx === enabledCats.length - 1}
+                    style={styles.moveBtn}
+                  >▼</button>
+                  <button
+                    onClick={() => toggleCategory(cat)}
+                    style={{ ...styles.moveBtn, color: '#ff5555' }}
+                  >✕</button>
+                </span>
               </li>
             )
           })}
         </ul>
+
+        {/* Add new categories from catalog */}
+        {(() => {
+          const available = ALL_CATEGORIES.filter(
+            (c) => !enabledCats.includes(c.category),
+          )
+          if (available.length === 0) return null
+          return (
+            <>
+              <h3 style={{ ...styles.sectionTitle, fontSize: 14, marginTop: 16 }}>
+                + Add
+              </h3>
+              <div style={styles.addGrid}>
+                {available.map((c) => (
+                  <button
+                    key={c.category}
+                    onClick={() => toggleCategory(c.category)}
+                    style={styles.addBtn}
+                  >
+                    + {getCategoryDisplayLabel(c)}
+                  </button>
+                ))}
+              </div>
+            </>
+          )
+        })()}
       </section>
 
       <section style={styles.section}>
@@ -280,6 +298,14 @@ const styles: Record<string, React.CSSProperties> = {
   moveBtn: {
     width: 28, height: 28, fontSize: 12, border: '1px solid #555',
     borderRadius: 4, backgroundColor: '#333', color: '#ccc', cursor: 'pointer',
+  },
+  addGrid: {
+    display: 'flex', flexWrap: 'wrap' as const, gap: 6,
+  },
+  addBtn: {
+    padding: '6px 12px', fontSize: 13, border: '1px dashed #555',
+    borderRadius: 16, backgroundColor: 'transparent', color: '#888',
+    cursor: 'pointer',
   },
   hint: { fontSize: 12, color: '#666', lineHeight: 1.5 },
 }
