@@ -9,7 +9,7 @@ export type TranslationKey =
   | 'open' | 'closed' | 'header_restaurant' | 'price_free'
   | 'app_title' | 'app_subtitle' | 'location_title' | 'use_gps'
   | 'locating' | 'gps_fail' | 'city_placeholder' | 'manual_location'
-  | 'search_radius' | 'categories_title' | 'usage_hint'
+  | 'search_radius' | 'categories_title' | 'categories_edit' | 'usage_hint'
 
 type Translations = Record<TranslationKey, string>
 
@@ -46,6 +46,7 @@ const pt: Translations = {
   manual_location: 'Localizacao manual',
   search_radius: 'Raio de busca',
   categories_title: 'Categorias disponiveis',
+  categories_edit: 'Editar categorias do menu',
   usage_hint: 'Use os oculos para navegar: swipe para scroll, tap para selecionar, double-tap para voltar ao menu.',
 }
 
@@ -82,6 +83,7 @@ const en: Translations = {
   manual_location: 'Manual location',
   search_radius: 'Search radius',
   categories_title: 'Available categories',
+  categories_edit: 'Edit menu categories',
   usage_hint: 'Use your glasses to navigate: swipe to scroll, tap to select, double-tap to go back.',
 }
 
@@ -118,6 +120,7 @@ const es: Translations = {
   manual_location: 'Ubicacion manual',
   search_radius: 'Radio de busqueda',
   categories_title: 'Categorias disponibles',
+  categories_edit: 'Editar categorias del menu',
   usage_hint: 'Usa tus lentes para navegar: desliza para scroll, toca para seleccionar, doble toque para volver.',
 }
 

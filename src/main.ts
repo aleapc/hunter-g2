@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createElement } from 'react'
 import { App } from './app'
 import { initialState } from './state'
-import type { HunterState } from './state'
+import type { HunterState, PlaceCategory } from './state'
 import { renderScreen } from './glasses/renderer'
 import { setupEventHandler } from './glasses/events'
 import { getUserLocation } from './utils/geo'
@@ -25,6 +25,15 @@ async function init() {
   if (savedRadius) {
     const r = parseInt(savedRadius, 10)
     if (!isNaN(r)) state.searchRadius = r
+  }
+
+  // Load enabled categories
+  const savedCategories = await bridge.getLocalStorage('hunter_categories')
+  if (savedCategories) {
+    try {
+      const cats = JSON.parse(savedCategories) as PlaceCategory[]
+      if (cats.length > 0) state.enabledCategories = cats
+    } catch { /* ignore */ }
   }
 
   // Auto-detect GPS if no saved location

@@ -40,9 +40,15 @@ export interface HunterState {
   selectedPlace: Place | null
   userLocation: UserLocation | null
   searchRadius: number
+  enabledCategories: PlaceCategory[]
   isLoading: boolean
   isFirstRender: boolean
 }
+
+export const DEFAULT_ENABLED_CATEGORIES: PlaceCategory[] = [
+  'restaurant', 'cafe', 'bar', 'ice_cream',
+  'gas_station', 'pharmacy', 'supermarket',
+]
 
 export const initialState: HunterState = {
   screen: 'categories',
@@ -52,6 +58,7 @@ export const initialState: HunterState = {
   selectedPlace: null,
   userLocation: null,
   searchRadius: 2000,
+  enabledCategories: [...DEFAULT_ENABLED_CATEGORIES],
   isLoading: false,
   isFirstRender: true,
 }
@@ -62,7 +69,7 @@ export interface CategoryMenuItem {
   hasSubcategories: boolean
 }
 
-export const CATEGORY_MENU: CategoryMenuItem[] = [
+export const ALL_CATEGORIES: CategoryMenuItem[] = [
   { labelKey: 'cat_restaurant', category: 'restaurant', hasSubcategories: true },
   { labelKey: 'cat_cafe', category: 'cafe', hasSubcategories: false },
   { labelKey: 'cat_bar', category: 'bar', hasSubcategories: false },
@@ -88,9 +95,16 @@ export const RESTAURANT_SUBCATEGORIES: SubcategoryItem[] = [
   { labelKey: 'sub_all', type: 'amenity=restaurant' },
 ]
 
+// Get active categories in user's order
+export function getEnabledMenu(state: HunterState): CategoryMenuItem[] {
+  return state.enabledCategories
+    .map((cat) => ALL_CATEGORIES.find((c) => c.category === cat))
+    .filter((c): c is CategoryMenuItem => c != null)
+}
+
 // Helper to get translated label
 export function getCategoryLabel(category: PlaceCategory): string {
-  const item = CATEGORY_MENU.find((c) => c.category === category)
+  const item = ALL_CATEGORIES.find((c) => c.category === category)
   return item ? t(item.labelKey) : ''
 }
 

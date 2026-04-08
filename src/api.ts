@@ -101,11 +101,17 @@ export async function searchNearby(
     const endpoint = getEndpoint()
 
     try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 12_000)
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `data=${encodeURIComponent(query)}`,
+        signal: controller.signal,
       })
+
+      clearTimeout(timeout)
 
       if (!response.ok) {
         console.warn(`Overpass ${endpoint} returned ${response.status}`)

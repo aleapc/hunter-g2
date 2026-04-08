@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk'
-import type { HunterState, UserLocation } from './state'
-import { CATEGORY_MENU } from './state'
+import type { HunterState, UserLocation, PlaceCategory } from './state'
+import { ALL_CATEGORIES } from './state'
 import { getUserLocation } from './utils/geo'
 import { renderScreen } from './glasses/renderer'
 import { t } from './i18n'
 
 const STORAGE_KEY_LOCATION = 'hunter_location'
 const STORAGE_KEY_RADIUS = 'hunter_radius'
+const STORAGE_KEY_CATEGORIES = 'hunter_categories'
 
 interface AppProps {
   bridge: EvenAppBridge
@@ -20,6 +21,7 @@ export function App({ bridge, state }: AppProps) {
   const [cityQuery, setCityQuery] = useState('')
   const [geoStatus, setGeoStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [statusMsg, setStatusMsg] = useState('')
+  const [enabledCats, setEnabledCats] = useState<PlaceCategory[]>([...state.enabledCategories])
 
   useEffect(() => {
     async function loadSettings() {
@@ -38,6 +40,16 @@ export function App({ bridge, state }: AppProps) {
           setRadius(r)
           state.searchRadius = r
         }
+      }
+      const savedCats = await bridge.getLocalStorage(STORAGE_KEY_CATEGORIES)
+      if (savedCats) {
+        try {
+          const cats = JSON.parse(savedCats) as PlaceCategory[]
+          if (cats.length > 0) {
+            setEnabledCats(cats)
+            state.enabledCategories = cats
+          }
+        } catch { /* ignore */ }
       }
     }
     loadSettings()
@@ -85,6 +97,42 @@ export function App({ bridge, state }: AppProps) {
       await bridge.setLocalStorage(STORAGE_KEY_RADIUS, String(r))
     },
     [bridge, state],
+  )
+
+  const saveCategories = useCallback(
+    async (cats: PlaceCategory[]) => {
+      setEnabledCats(cats)
+      state.enabledCategories = cats
+      await bridge.setLocalStorage(STORAGE_KEY_CATEGORIES, JSON.stringify(cats))
+      state.isFirstRender = false
+      renderScreen(bridge, state)
+    },
+    [bridge, state],
+  )
+
+  const toggleCategory = useCallback(
+    (cat: PlaceCategory) => {
+      const isEnabled = enabledCats.includes(cat)
+      const updated = isEnabled
+        ? enabledCats.filter((c) => c !== cat)
+        : [...enabledCats, cat]
+      if (updated.length > 0) saveCategories(updated)
+    },
+    [enabledCats, saveCategories],
+  )
+
+  const moveCategory = useCallback(
+    (cat: PlaceCategory, direction: -1 | 1) => {
+      const idx = enabledCats.indexOf(cat)
+      if (idx < 0) return
+      const newIdx = idx + direction
+      if (newIdx < 0 || newIdx >= enabledCats.length) return
+      const updated = [...enabledCats]
+      updated[idx] = updated[newIdx]
+      updated[newIdx] = cat
+      saveCategories(updated)
+    },
+    [enabledCats, saveCategories],
   )
 
   return (
@@ -139,13 +187,43 @@ export function App({ bridge, state }: AppProps) {
       </section>
 
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>{t('categories_title')}</h2>
+        <h2 style={styles.sectionTitle}>{t('categories_edit')}</h2>
         <ul style={styles.list}>
-          {CATEGORY_MENU.map((c) => (
-            <li key={c.category} style={styles.listItem}>
-              {t(c.labelKey)}
-            </li>
-          ))}
+          {ALL_CATEGORIES.map((c) => {
+            const enabled = enabledCats.includes(c.category)
+            const idx = enabledCats.indexOf(c.category)
+            return (
+              <li key={c.category} style={{ ...styles.catRow, opacity: enabled ? 1 : 0.4 }}>
+                <label style={styles.catLabel}>
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={() => toggleCategory(c.category)}
+                    style={styles.checkbox}
+                  />
+                  {t(c.labelKey)}
+                </label>
+                {enabled && (
+                  <span style={styles.catButtons}>
+                    <button
+                      onClick={() => moveCategory(c.category, -1)}
+                      disabled={idx === 0}
+                      style={styles.moveBtn}
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => moveCategory(c.category, 1)}
+                      disabled={idx === enabledCats.length - 1}
+                      style={styles.moveBtn}
+                    >
+                      ▼
+                    </button>
+                  </span>
+                )}
+              </li>
+            )
+          })}
         </ul>
       </section>
 
@@ -192,5 +270,16 @@ const styles: Record<string, React.CSSProperties> = {
   info: { fontSize: 13, color: '#4CAF50', marginTop: 4 },
   list: { listStyle: 'none', padding: 0, margin: 0 },
   listItem: { padding: '8px 12px', borderBottom: '1px solid #333', fontSize: 14 },
+  catRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '8px 12px', borderBottom: '1px solid #333',
+  },
+  catLabel: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' },
+  checkbox: { accentColor: '#4CAF50', width: 18, height: 18 },
+  catButtons: { display: 'flex', gap: 4 },
+  moveBtn: {
+    width: 28, height: 28, fontSize: 12, border: '1px solid #555',
+    borderRadius: 4, backgroundColor: '#333', color: '#ccc', cursor: 'pointer',
+  },
   hint: { fontSize: 12, color: '#666', lineHeight: 1.5 },
 }

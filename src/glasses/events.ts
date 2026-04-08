@@ -4,7 +4,7 @@ import {
   RebuildPageContainer,
 } from '@evenrealities/even_hub_sdk'
 import type { HunterState } from '../state'
-import { CATEGORY_MENU, RESTAURANT_SUBCATEGORIES } from '../state'
+import { RESTAURANT_SUBCATEGORIES, getEnabledMenu } from '../state'
 import { t } from '../i18n'
 import { searchNearby } from '../api'
 import { calculateDistance } from '../utils/geo'
@@ -174,7 +174,8 @@ export function setupEventHandler(
     switch (state.screen) {
       case 'categories':
         if (action === 'click' && selectedIndex != null) {
-          const menuItem = CATEGORY_MENU[selectedIndex]
+          const enabledMenu = getEnabledMenu(state)
+          const menuItem = enabledMenu[selectedIndex]
           if (!menuItem) break
           state.selectedCategory = menuItem.category
           state.selectedSubcategory = null
