@@ -111,6 +111,7 @@ async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise
     return
   }
   state.isLoading = true
+  searchCancelled = false
   renderScreen(bridge, state)
 
   const subcategoryType = state.selectedSubcategory ?? undefined
@@ -134,6 +135,8 @@ async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise
       )
     })
     places.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+
+    if (searchCancelled) return
 
     // Enrich with Google ratings via Serper (if API key available)
     if (isSerperAvailable() && places.length > 0) {
@@ -165,9 +168,13 @@ async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise
     state.places = []
   }
 
+  if (searchCancelled) return
+
   state.isLoading = false
   state.screen = 'results'
 }
+
+let searchCancelled = false
 
 function goHome(state: HunterState): void {
   state.screen = 'categories'
@@ -175,6 +182,8 @@ function goHome(state: HunterState): void {
   state.selectedSubcategory = null
   state.selectedPlace = null
   state.places = []
+  state.isLoading = false
+  searchCancelled = true
 }
 
 export function setupEventHandler(
@@ -189,8 +198,8 @@ export function setupEventHandler(
     const { action, selectedIndex } = parseEvent(event)
     if (action === 'unknown') return
 
-    // Double-click always goes home from any screen
-    if (action === 'doubleClick' && state.screen !== 'categories') {
+    // Double-click always goes home (from any screen or during loading)
+    if (action === 'doubleClick' && (state.screen !== 'categories' || state.isLoading)) {
       goHome(state)
       state.isFirstRender = false
       renderScreen(bridge, state)
@@ -209,7 +218,10 @@ export function setupEventHandler(
           if (menuItem.hasSubcategories) {
             state.screen = 'subcategories'
           } else {
-            await performSearch(bridge, state)
+            performSearch(bridge, state).then(() => {
+              if (!searchCancelled) renderScreen(bridge, state)
+            })
+            return // don't renderScreen below — performSearch handles it
           }
         }
         break
@@ -219,7 +231,10 @@ export function setupEventHandler(
           const sub = RESTAURANT_SUBCATEGORIES[selectedIndex]
           if (!sub) break
           state.selectedSubcategory = sub.type
-          await performSearch(bridge, state)
+          performSearch(bridge, state).then(() => {
+            if (!searchCancelled) renderScreen(bridge, state)
+          })
+          return
         }
         break
 
