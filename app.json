@@ -13,8 +13,8 @@
   "permissions": [
     {
       "name": "network",
-      "desc": "Fetches nearby places from Foursquare Places API.",
-      "whitelist": ["places-api.foursquare.com"]
+      "desc": "Fetches nearby places from OpenStreetMap.",
+      "whitelist": ["overpass-api.de", "overpass.kumi.systems"]
     },
     {
       "name": "location",

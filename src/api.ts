@@ -1,56 +1,85 @@
 import type { Place, PlaceCategory } from './state'
-import { CATEGORY_TO_FSQ_IDS } from './state'
+import { CATEGORY_TO_OSM_TAGS } from './state'
 import { calculateDistance } from './utils/geo'
 
-const API_KEY = import.meta.env.VITE_FOURSQUARE_API_KEY as string
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.ru/api/interpreter',
+]
 
-function getBaseUrl(): string {
-  if (import.meta.env.DEV) return '/api/places'
-  return 'https://places-api.foursquare.com/places'
+let endpointIndex = 0
+
+function getEndpoint(): string {
+  return OVERPASS_ENDPOINTS[endpointIndex]
 }
 
-interface FsqCategory {
-  fsq_category_id: string
-  name: string
-  short_name: string
+function rotateEndpoint(): void {
+  endpointIndex = (endpointIndex + 1) % OVERPASS_ENDPOINTS.length
 }
 
-interface FsqPlace {
-  fsq_place_id: string
-  name: string
-  latitude: number
-  longitude: number
-  categories?: FsqCategory[]
-  rating?: number
-  price?: number
-  hours?: { open_now?: boolean }
-  distance?: number
-  stats?: { total_ratings?: number }
-  location?: {
-    formatted_address?: string
-    address?: string
-    locality?: string
-  }
+interface OsmElement {
+  type: string
+  id: number
+  lat: number
+  lon: number
+  tags?: Record<string, string>
+  center?: { lat: number; lon: number }
 }
 
-interface FsqSearchResponse {
-  results: FsqPlace[]
+interface OverpassResponse {
+  elements: OsmElement[]
 }
 
-function toPlace(result: FsqPlace, category: PlaceCategory): Place {
+function toPlace(el: OsmElement, category: PlaceCategory): Place {
+  const lat = el.lat ?? el.center?.lat ?? 0
+  const lon = el.lon ?? el.center?.lon ?? 0
+  const tags = el.tags ?? {}
+
+  const addressParts = [
+    tags['addr:street'],
+    tags['addr:housenumber'],
+    tags['addr:city'] ?? tags['addr:suburb'],
+  ].filter(Boolean)
+
   return {
-    id: result.fsq_place_id,
-    name: result.name,
-    latitude: result.latitude,
-    longitude: result.longitude,
+    id: `osm-${el.type}-${el.id}`,
+    name: tags.name ?? tags['name:en'] ?? 'Sem nome',
+    latitude: lat,
+    longitude: lon,
     category,
-    rating: result.rating != null ? result.rating / 2 : undefined,
-    userRatingsTotal: result.stats?.total_ratings,
-    priceLevel: result.price,
-    address: result.location?.formatted_address ?? result.location?.address,
-    distance: result.distance,
-    isOpen: result.hours?.open_now,
+    address: addressParts.length > 0 ? addressParts.join(', ') : undefined,
+    isOpen: undefined,
+    rating: undefined,
+    userRatingsTotal: undefined,
+    priceLevel: undefined,
   }
+}
+
+function buildQuery(
+  lat: number,
+  lng: number,
+  tags: string[],
+  radius: number,
+  limit: number,
+): string {
+  const filters = tags
+    .map((tag) => {
+      if (tag.startsWith('cuisine=')) {
+        // cuisine subcategory: search restaurants with that cuisine
+        const cuisine = tag.split('=')[1]
+        return `node["amenity"="restaurant"]["cuisine"~"${cuisine}",i](around:${radius},${lat},${lng});`
+      }
+      const [key, value] = tag.split('=')
+      return `node["${key}"="${value}"](around:${radius},${lat},${lng});`
+    })
+    .join('\n')
+
+  return `[out:json][timeout:15];
+(
+${filters}
+);
+out body ${limit};`
 }
 
 export async function searchNearby(
@@ -58,40 +87,58 @@ export async function searchNearby(
   lng: number,
   category: PlaceCategory,
   radius: number = 2000,
-  subcategoryId?: string,
+  subcategoryTag?: string,
 ): Promise<Place[]> {
-  const categoryIds = subcategoryId
-    ? subcategoryId
-    : CATEGORY_TO_FSQ_IDS[category]
+  const tags = subcategoryTag
+    ? [subcategoryTag]
+    : CATEGORY_TO_OSM_TAGS[category]
 
-  const params = new URLSearchParams({
-    ll: `${lat},${lng}`,
-    radius: String(radius),
-    categories: categoryIds,
-    limit: '15',
-    sort: 'DISTANCE',
-  })
+  const query = buildQuery(lat, lng, tags, radius, 20)
 
-  const response = await fetch(`${getBaseUrl()}/search?${params}`, {
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      'X-Places-Api-Version': '2025-06-17',
-      Accept: 'application/json',
-    },
-  })
+  let lastError: Error | null = null
 
-  if (!response.ok) {
-    console.error('Foursquare API error:', response.status, await response.text())
-    return []
+  for (let attempt = 0; attempt < OVERPASS_ENDPOINTS.length; attempt++) {
+    const endpoint = getEndpoint()
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+      })
+
+      if (!response.ok) {
+        console.warn(`Overpass ${endpoint} returned ${response.status}`)
+        rotateEndpoint()
+        continue
+      }
+
+      const contentType = response.headers.get('content-type') ?? ''
+      if (!contentType.includes('json')) {
+        console.warn(`Overpass ${endpoint} returned non-JSON`)
+        rotateEndpoint()
+        continue
+      }
+
+      const data: OverpassResponse = await response.json()
+
+      const places = data.elements
+        .filter((el) => el.tags?.name)
+        .map((el) => {
+          const place = toPlace(el, category)
+          place.distance = calculateDistance(lat, lng, place.latitude, place.longitude)
+          return place
+        })
+        .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+
+      return places
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      console.warn(`Overpass ${endpoint} failed:`, lastError.message)
+      rotateEndpoint()
+    }
   }
 
-  const data: FsqSearchResponse = await response.json()
-
-  return data.results.map((p) => {
-    const place = toPlace(p, category)
-    if (place.distance == null && place.latitude && place.longitude) {
-      place.distance = calculateDistance(lat, lng, place.latitude, place.longitude)
-    }
-    return place
-  })
+  console.error('All Overpass endpoints failed:', lastError?.message)
+  return []
 }

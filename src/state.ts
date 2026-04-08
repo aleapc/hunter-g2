@@ -74,23 +74,24 @@ export interface SubcategoryItem {
   type: string
 }
 
-// Foursquare category IDs (BSON hex format, accepted by v3 API)
+// OSM tags: cuisine=* values for restaurant subcategories
 export const RESTAURANT_SUBCATEGORIES: SubcategoryItem[] = [
-  { label: 'Japonesa', type: '4bf58dd8d48988d111941735' },
-  { label: 'Italiana', type: '4bf58dd8d48988d110941735' },
-  { label: 'Brasileira', type: '4bf58dd8d48988d16b941735' },
-  { label: 'Pizza', type: '4bf58dd8d48988d1ca941735' },
-  { label: 'Fast Food', type: '4bf58dd8d48988d16e941735' },
-  { label: 'Mexicana', type: '4bf58dd8d48988d1c1941735' },
-  { label: 'Todos', type: '4bf58dd8d48988d1c4941735' },
+  { label: 'Japonesa', type: 'cuisine=japanese' },
+  { label: 'Italiana', type: 'cuisine=italian' },
+  { label: 'Brasileira', type: 'cuisine=brazilian' },
+  { label: 'Pizza', type: 'cuisine=pizza' },
+  { label: 'Fast Food', type: 'amenity=fast_food' },
+  { label: 'Mexicana', type: 'cuisine=mexican' },
+  { label: 'Todos', type: 'amenity=restaurant' },
 ]
 
-export const CATEGORY_TO_FSQ_IDS: Record<PlaceCategory, string> = {
-  restaurant: '4bf58dd8d48988d1c4941735',
-  cafe: '4bf58dd8d48988d16d941735,4bf58dd8d48988d1e0931735',
-  bar: '4bf58dd8d48988d116941735,4bf58dd8d48988d11b941735',
-  ice_cream: '4bf58dd8d48988d1c9941735',
-  gas_station: '4bf58dd8d48988d113951735',
-  pharmacy: '4bf58dd8d48988d10f951735',
-  supermarket: '52f2ab2ebcbc57f1066b8b46,4bf58dd8d48988d118951735,4d954b0ea243a5684a65b473',
+// OSM amenity/shop tags for each category
+export const CATEGORY_TO_OSM_TAGS: Record<PlaceCategory, string[]> = {
+  restaurant: ['amenity=restaurant'],
+  cafe: ['amenity=cafe'],
+  bar: ['amenity=bar', 'amenity=pub'],
+  ice_cream: ['amenity=ice_cream', 'cuisine=ice_cream'],
+  gas_station: ['amenity=fuel'],
+  pharmacy: ['amenity=pharmacy'],
+  supermarket: ['shop=supermarket', 'shop=convenience'],
 }
