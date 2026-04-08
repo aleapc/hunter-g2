@@ -9,7 +9,7 @@
   "description": "Discover restaurants, bars, cafes, gas stations and more — right on your glasses.",
   "author": "Dalff",
   "entrypoint": "index.html",
-  "supported_languages": ["en", "es"],
+  "supported_languages": ["en", "es", "pt"],
   "permissions": [
     {
       "name": "network",

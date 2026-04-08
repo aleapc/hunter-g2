@@ -7,9 +7,10 @@ import {
   RebuildPageContainer,
 } from '@evenrealities/even_hub_sdk'
 import type { HunterState } from '../state'
-import { CATEGORY_MENU, RESTAURANT_SUBCATEGORIES } from '../state'
+import { CATEGORY_MENU, RESTAURANT_SUBCATEGORIES, getCategoryLabel, getSubcategoryLabel } from '../state'
 import { formatDistance, formatRating, formatPriceLevel, truncate } from '../utils/format'
 import { getCardinalDirection, getDirectionArrow } from '../utils/geo'
+import { t } from '../i18n'
 import * as L from './layout'
 
 function makeListContainer(
@@ -85,7 +86,7 @@ export function renderCategories(
 ): void {
   const locationLabel = state.userLocation?.label ?? 'GPS'
   const header = makeHeader(`HUNTER  ${locationLabel}`)
-  const items = CATEGORY_MENU.map((c) => c.label)
+  const items = CATEGORY_MENU.map((c) => t(c.labelKey))
   const list = makeListContainer(items, {
     containerID: 1,
     containerName: 'catlist',
@@ -103,8 +104,8 @@ export function renderSubcategories(
   bridge: EvenAppBridge,
   _state: HunterState,
 ): void {
-  const header = makeHeader('RESTAURANTE')
-  const items = RESTAURANT_SUBCATEGORIES.map((s) => s.label)
+  const header = makeHeader(t('header_restaurant'))
+  const items = RESTAURANT_SUBCATEGORIES.map((s) => t(s.labelKey))
   const list = makeListContainer(items, {
     containerID: 1,
     containerName: 'sublist',
@@ -122,10 +123,9 @@ export function renderResults(
   bridge: EvenAppBridge,
   state: HunterState,
 ): void {
-  const catLabel =
-    CATEGORY_MENU.find((c) => c.category === state.selectedCategory)?.label ?? ''
+  const catLabel = getCategoryLabel(state.selectedCategory!)
   const subLabel = state.selectedSubcategory
-    ? ` ${RESTAURANT_SUBCATEGORIES.find((s) => s.type === state.selectedSubcategory)?.label ?? ''}`
+    ? ` ${getSubcategoryLabel(state.selectedSubcategory)}`
     : ''
   const radiusKm = (state.searchRadius / 1000).toFixed(1)
   const header = makeHeader(`${catLabel}${subLabel} < ${radiusKm}km`)
@@ -138,7 +138,7 @@ export function renderResults(
           const dist = p.distance != null ? formatDistance(p.distance) : '?'
           return `${name} ${rating} ${dist}`
         })
-      : ['Nenhum lugar encontrado']
+      : [t('no_results')]
 
   const list = makeListContainer(items, {
     containerID: 1,
@@ -162,7 +162,7 @@ export function renderDetails(
 
   const rating = formatRating(place.rating)
   const reviews = place.userRatingsTotal != null ? `(${place.userRatingsTotal})` : ''
-  const price = formatPriceLevel(place.priceLevel)
+  const price = formatPriceLevel(place.priceLevel, t('price_free'))
   const dist = place.distance != null ? formatDistance(place.distance) : ''
   const direction =
     state.userLocation && place.distance != null
@@ -170,9 +170,8 @@ export function renderDetails(
       : ''
   const arrow = getDirectionArrow(direction)
   const openStatus =
-    place.isOpen === true ? 'Aberto' : place.isOpen === false ? 'Fechado' : ''
-  const catLabel =
-    CATEGORY_MENU.find((c) => c.category === place.category)?.label ?? ''
+    place.isOpen === true ? t('open') : place.isOpen === false ? t('closed') : ''
+  const catLabel = getCategoryLabel(place.category)
 
   const lines = [
     place.name,
@@ -182,7 +181,7 @@ export function renderDetails(
     [dist, direction, arrow].filter(Boolean).join(' '),
     openStatus,
     '',
-    'double-tap = voltar',
+    t('back_hint'),
   ]
 
   const text = new TextContainerProperty({
@@ -214,7 +213,7 @@ export function renderLoading(bridge: EvenAppBridge, isFirst: boolean): void {
     paddingLength: L.PADDING,
     containerID: 0,
     containerName: 'loading',
-    content: '\n\n       Buscando lugares...',
+    content: `\n\n       ${t('loading')}`,
     isEventCapture: 1,
   })
 

@@ -15,16 +15,10 @@ export function formatRating(rating: number | undefined): string {
   )
 }
 
-export function formatPriceLevel(level: number | undefined): string {
+export function formatPriceLevel(level: number | undefined, freeLabel = 'Free'): string {
   if (level == null) return ''
-  const map: Record<number, string> = {
-    0: 'Free',
-    1: '$',
-    2: '$$',
-    3: '$$$',
-    4: '$$$$',
-  }
-  return map[level] ?? ''
+  if (level === 0) return freeLabel
+  return '$'.repeat(level)
 }
 
 export function truncate(text: string, maxLen: number): string {

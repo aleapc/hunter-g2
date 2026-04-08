@@ -6,6 +6,7 @@ import { initialState } from './state'
 import type { HunterState } from './state'
 import { renderScreen } from './glasses/renderer'
 import { setupEventHandler } from './glasses/events'
+import { getUserLocation } from './utils/geo'
 
 const state: HunterState = { ...initialState }
 
@@ -24,6 +25,18 @@ async function init() {
   if (savedRadius) {
     const r = parseInt(savedRadius, 10)
     if (!isNaN(r)) state.searchRadius = r
+  }
+
+  // Auto-detect GPS if no saved location
+  if (!state.userLocation) {
+    try {
+      const loc = await getUserLocation()
+      loc.label = 'GPS'
+      state.userLocation = loc
+      await bridge.setLocalStorage('hunter_location', JSON.stringify(loc))
+    } catch {
+      console.warn('GPS auto-detect failed, user must set location manually')
+    }
   }
 
   // Setup glasses event handler

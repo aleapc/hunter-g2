@@ -1,3 +1,6 @@
+import { t } from './i18n'
+import type { TranslationKey } from './i18n'
+
 export type PlaceCategory =
   | 'restaurant'
   | 'cafe'
@@ -54,36 +57,47 @@ export const initialState: HunterState = {
 }
 
 export interface CategoryMenuItem {
-  label: string
+  labelKey: TranslationKey
   category: PlaceCategory
   hasSubcategories: boolean
 }
 
 export const CATEGORY_MENU: CategoryMenuItem[] = [
-  { label: 'Restaurante', category: 'restaurant', hasSubcategories: true },
-  { label: 'Cafe', category: 'cafe', hasSubcategories: false },
-  { label: 'Bar', category: 'bar', hasSubcategories: false },
-  { label: 'Sorvete', category: 'ice_cream', hasSubcategories: false },
-  { label: 'Gasolina', category: 'gas_station', hasSubcategories: false },
-  { label: 'Farmacia', category: 'pharmacy', hasSubcategories: false },
-  { label: 'Supermercado', category: 'supermarket', hasSubcategories: false },
+  { labelKey: 'cat_restaurant', category: 'restaurant', hasSubcategories: true },
+  { labelKey: 'cat_cafe', category: 'cafe', hasSubcategories: false },
+  { labelKey: 'cat_bar', category: 'bar', hasSubcategories: false },
+  { labelKey: 'cat_ice_cream', category: 'ice_cream', hasSubcategories: false },
+  { labelKey: 'cat_gas_station', category: 'gas_station', hasSubcategories: false },
+  { labelKey: 'cat_pharmacy', category: 'pharmacy', hasSubcategories: false },
+  { labelKey: 'cat_supermarket', category: 'supermarket', hasSubcategories: false },
 ]
 
 export interface SubcategoryItem {
-  label: string
+  labelKey: TranslationKey
   type: string
 }
 
 // OSM tags: cuisine=* values for restaurant subcategories
 export const RESTAURANT_SUBCATEGORIES: SubcategoryItem[] = [
-  { label: 'Japonesa', type: 'cuisine=japanese' },
-  { label: 'Italiana', type: 'cuisine=italian' },
-  { label: 'Brasileira', type: 'cuisine=brazilian' },
-  { label: 'Pizza', type: 'cuisine=pizza' },
-  { label: 'Fast Food', type: 'amenity=fast_food' },
-  { label: 'Mexicana', type: 'cuisine=mexican' },
-  { label: 'Todos', type: 'amenity=restaurant' },
+  { labelKey: 'sub_japanese', type: 'cuisine=japanese' },
+  { labelKey: 'sub_italian', type: 'cuisine=italian' },
+  { labelKey: 'sub_brazilian', type: 'cuisine=brazilian' },
+  { labelKey: 'sub_pizza', type: 'cuisine=pizza' },
+  { labelKey: 'sub_fast_food', type: 'amenity=fast_food' },
+  { labelKey: 'sub_mexican', type: 'cuisine=mexican' },
+  { labelKey: 'sub_all', type: 'amenity=restaurant' },
 ]
+
+// Helper to get translated label
+export function getCategoryLabel(category: PlaceCategory): string {
+  const item = CATEGORY_MENU.find((c) => c.category === category)
+  return item ? t(item.labelKey) : ''
+}
+
+export function getSubcategoryLabel(type: string): string {
+  const item = RESTAURANT_SUBCATEGORIES.find((s) => s.type === type)
+  return item ? t(item.labelKey) : ''
+}
 
 // OSM amenity/shop tags for each category
 export const CATEGORY_TO_OSM_TAGS: Record<PlaceCategory, string[]> = {

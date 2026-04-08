@@ -1,6 +1,11 @@
-import type { EvenAppBridge } from '@evenrealities/even_hub_sdk'
+import type { EvenAppBridge, EvenHubEvent } from '@evenrealities/even_hub_sdk'
+import {
+  TextContainerProperty,
+  RebuildPageContainer,
+} from '@evenrealities/even_hub_sdk'
 import type { HunterState } from '../state'
 import { CATEGORY_MENU, RESTAURANT_SUBCATEGORIES } from '../state'
+import { t } from '../i18n'
 import { searchNearby } from '../api'
 import { calculateDistance } from '../utils/geo'
 import { renderScreen } from './renderer'
@@ -8,104 +13,167 @@ import { renderScreen } from './renderer'
 const SCROLL_COOLDOWN = 300
 let lastEventTime = 0
 
-type EventType =
-  | 'click'
-  | 'doubleClick'
-  | 'topScroll'
-  | 'bottomScroll'
-  | 'unknown'
+// OsEventTypeList enum values from SDK
+const EVT_CLICK = 0
+const EVT_SCROLL_TOP = 1
+const EVT_SCROLL_BOTTOM = 2
+const EVT_DOUBLE_CLICK = 3
 
-function resolveEventType(event: Record<string, unknown>): {
-  type: EventType
+type ParsedEvent = {
+  action: 'click' | 'doubleClick' | 'scrollUp' | 'scrollDown' | 'unknown'
   selectedIndex?: number
-} {
+}
+
+function parseEvent(event: EvenHubEvent): ParsedEvent {
   // List container events
-  if (event.listEvent != null) {
-    const le = event.listEvent as Record<string, unknown>
-    if (le.selectedIndex != null) {
-      return { type: 'click', selectedIndex: le.selectedIndex as number }
+  if (event.listEvent) {
+    const le = event.listEvent
+    const evtType = le.eventType as number | undefined
+    const idx = le.currentSelectItemIndex
+
+    if (evtType === EVT_DOUBLE_CLICK) {
+      return { action: 'doubleClick', selectedIndex: idx }
+    }
+    if (evtType === EVT_CLICK) {
+      return { action: 'click', selectedIndex: idx }
+    }
+    if (evtType === EVT_SCROLL_TOP) {
+      return { action: 'scrollUp' }
+    }
+    if (evtType === EVT_SCROLL_BOTTOM) {
+      return { action: 'scrollDown' }
+    }
+    // If eventType is missing but we have an index, treat as click
+    if (idx != null) {
+      return { action: 'click', selectedIndex: idx }
     }
   }
 
   // Text container events
-  if (event.textEvent != null) {
-    const te = event.textEvent as Record<string, unknown>
-    const code = te.eventType as number | string | undefined
-    if (code === 1 || code === 'click') return { type: 'click' }
-    if (code === 2 || code === 'doubleClick') return { type: 'doubleClick' }
-    if (code === 3 || code === 'topScroll') return { type: 'topScroll' }
-    if (code === 4 || code === 'bottomScroll') return { type: 'bottomScroll' }
+  if (event.textEvent) {
+    const te = event.textEvent
+    const evtType = te.eventType as number | undefined
+
+    if (evtType === EVT_DOUBLE_CLICK) return { action: 'doubleClick' }
+    if (evtType === EVT_CLICK) return { action: 'click' }
+    if (evtType === EVT_SCROLL_TOP) return { action: 'scrollUp' }
+    if (evtType === EVT_SCROLL_BOTTOM) return { action: 'scrollDown' }
   }
 
   // System events
-  if (event.sysEvent != null) {
-    const se = event.sysEvent as Record<string, unknown>
-    if (se.eventType === 'doubleClick' || se.eventType === 2) {
-      return { type: 'doubleClick' }
-    }
+  if (event.sysEvent) {
+    const se = event.sysEvent
+    const evtType = se.eventType as number | undefined
+
+    if (evtType === EVT_DOUBLE_CLICK) return { action: 'doubleClick' }
+    if (evtType === EVT_CLICK) return { action: 'click' }
   }
 
-  // Flat event format
-  if (event.eventType != null) {
-    const code = event.eventType as number | string
-    if (code === 1 || code === 'click') {
-      return {
-        type: 'click',
-        selectedIndex: event.selectedIndex as number | undefined,
-      }
-    }
-    if (code === 2 || code === 'doubleClick') return { type: 'doubleClick' }
-    if (code === 3 || code === 'topScroll') return { type: 'topScroll' }
-    if (code === 4 || code === 'bottomScroll') return { type: 'bottomScroll' }
+  // Fallback: check jsonData
+  if (event.jsonData) {
+    const jd = event.jsonData
+    const evtType = (jd.eventType ?? jd.Event_Type) as number | undefined
+    const idx = jd.currentSelectItemIndex as number | undefined
+
+    if (evtType === EVT_DOUBLE_CLICK) return { action: 'doubleClick', selectedIndex: idx }
+    if (evtType === EVT_CLICK) return { action: 'click', selectedIndex: idx }
+    if (evtType === EVT_SCROLL_TOP) return { action: 'scrollUp' }
+    if (evtType === EVT_SCROLL_BOTTOM) return { action: 'scrollDown' }
   }
 
-  return { type: 'unknown' }
+  return { action: 'unknown' }
 }
 
-async function performSearch(state: HunterState): Promise<void> {
-  if (!state.userLocation) return
+async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise<void> {
+  if (!state.userLocation) {
+    const errText = new TextContainerProperty({
+      xPosition: 0,
+      yPosition: 0,
+      width: 576,
+      height: 288,
+      borderWidth: 0,
+      borderColor: 0,
+      paddingLength: 8,
+      containerID: 0,
+      containerName: 'noloc',
+      content: t('no_location'),
+      isEventCapture: 1,
+    })
+    bridge.rebuildPageContainer(
+      new RebuildPageContainer({
+        containerTotalNum: 1,
+        textObject: [errText],
+      }),
+    )
+    state.screen = 'results'
+    return
+  }
   state.isLoading = true
+  renderScreen(bridge, state)
 
   const subcategoryType = state.selectedSubcategory ?? undefined
   const category = state.selectedCategory!
 
-  const places = await searchNearby(
-    state.userLocation.lat,
-    state.userLocation.lng,
-    category,
-    state.searchRadius,
-    subcategoryType,
-  )
-
-  places.forEach((p) => {
-    p.distance = calculateDistance(
-      state.userLocation!.lat,
-      state.userLocation!.lng,
-      p.latitude,
-      p.longitude,
+  try {
+    const places = await searchNearby(
+      state.userLocation.lat,
+      state.userLocation.lng,
+      category,
+      state.searchRadius,
+      subcategoryType,
     )
-  })
-  places.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
 
-  state.places = places
+    places.forEach((p) => {
+      p.distance = calculateDistance(
+        state.userLocation!.lat,
+        state.userLocation!.lng,
+        p.latitude,
+        p.longitude,
+      )
+    })
+    places.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+
+    state.places = places
+  } catch (err) {
+    console.error('Search failed:', err)
+    state.places = []
+  }
+
   state.isLoading = false
   state.screen = 'results'
+}
+
+function goHome(state: HunterState): void {
+  state.screen = 'categories'
+  state.selectedCategory = null
+  state.selectedSubcategory = null
+  state.selectedPlace = null
+  state.places = []
 }
 
 export function setupEventHandler(
   bridge: EvenAppBridge,
   state: HunterState,
 ): void {
-  bridge.onEvenHubEvent(async (event: Record<string, unknown>) => {
+  bridge.onEvenHubEvent(async (event: EvenHubEvent) => {
     const now = Date.now()
     if (now - lastEventTime < SCROLL_COOLDOWN) return
     lastEventTime = now
 
-    const { type, selectedIndex } = resolveEventType(event)
+    const { action, selectedIndex } = parseEvent(event)
+    if (action === 'unknown') return
+
+    // Double-click always goes home from any screen
+    if (action === 'doubleClick' && state.screen !== 'categories') {
+      goHome(state)
+      state.isFirstRender = false
+      renderScreen(bridge, state)
+      return
+    }
 
     switch (state.screen) {
       case 'categories':
-        if (type === 'click' && selectedIndex != null) {
+        if (action === 'click' && selectedIndex != null) {
           const menuItem = CATEGORY_MENU[selectedIndex]
           if (!menuItem) break
           state.selectedCategory = menuItem.category
@@ -114,41 +182,32 @@ export function setupEventHandler(
           if (menuItem.hasSubcategories) {
             state.screen = 'subcategories'
           } else {
-            await performSearch(state)
+            await performSearch(bridge, state)
           }
         }
         break
 
       case 'subcategories':
-        if (type === 'click' && selectedIndex != null) {
+        if (action === 'click' && selectedIndex != null) {
           const sub = RESTAURANT_SUBCATEGORIES[selectedIndex]
           if (!sub) break
           state.selectedSubcategory = sub.type
-          await performSearch(state)
-        }
-        if (type === 'doubleClick') {
-          state.screen = 'categories'
+          await performSearch(bridge, state)
         }
         break
 
       case 'results':
-        if (type === 'click' && selectedIndex != null) {
+        if (action === 'click' && selectedIndex != null) {
           const place = state.places[selectedIndex]
           if (place) {
             state.selectedPlace = place
             state.screen = 'details'
           }
         }
-        if (type === 'doubleClick') {
-          state.screen = 'categories'
-          state.selectedCategory = null
-          state.selectedSubcategory = null
-          state.places = []
-        }
         break
 
       case 'details':
-        if (type === 'click' || type === 'doubleClick') {
+        if (action === 'click') {
           state.selectedPlace = null
           state.screen = 'results'
         }

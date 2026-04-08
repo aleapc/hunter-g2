@@ -4,6 +4,7 @@ import type { HunterState, UserLocation } from './state'
 import { CATEGORY_MENU } from './state'
 import { getUserLocation } from './utils/geo'
 import { renderScreen } from './glasses/renderer'
+import { t } from './i18n'
 
 const STORAGE_KEY_LOCATION = 'hunter_location'
 const STORAGE_KEY_RADIUS = 'hunter_radius'
@@ -44,7 +45,7 @@ export function App({ bridge, state }: AppProps) {
 
   const handleUseGPS = useCallback(async () => {
     setGeoStatus('loading')
-    setStatusMsg('Obtendo localiza\u00e7\u00e3o...')
+    setStatusMsg(t('locating'))
     try {
       const loc = await getUserLocation()
       loc.label = 'GPS'
@@ -52,12 +53,12 @@ export function App({ bridge, state }: AppProps) {
       state.userLocation = loc
       await bridge.setLocalStorage(STORAGE_KEY_LOCATION, JSON.stringify(loc))
       setGeoStatus('success')
-      setStatusMsg(`Localizado: ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`)
+      setStatusMsg(`${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`)
       state.isFirstRender = false
       renderScreen(bridge, state)
     } catch (err) {
       setGeoStatus('error')
-      setStatusMsg(`Erro: ${err instanceof Error ? err.message : 'Falha no GPS'}`)
+      setStatusMsg(`${t('gps_fail')}: ${err instanceof Error ? err.message : '?'}`)
     }
   }, [bridge, state])
 
@@ -71,7 +72,7 @@ export function App({ bridge, state }: AppProps) {
     setLocation(loc)
     state.userLocation = loc
     await bridge.setLocalStorage(STORAGE_KEY_LOCATION, JSON.stringify(loc))
-    setStatusMsg(`Localiza\u00e7\u00e3o manual: ${cityQuery}`)
+    setStatusMsg(`${t('manual_location')}: ${cityQuery}`)
     state.isFirstRender = false
     renderScreen(bridge, state)
   }, [bridge, state, cityQuery])
@@ -88,20 +89,20 @@ export function App({ bridge, state }: AppProps) {
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>Hunter</h1>
-      <p style={styles.subtitle}>Descubra lugares por perto</p>
+      <h1 style={styles.title}>{t('app_title')}</h1>
+      <p style={styles.subtitle}>{t('app_subtitle')}</p>
 
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Localiza\u00e7\u00e3o</h2>
+        <h2 style={styles.sectionTitle}>{t('location_title')}</h2>
 
         <button onClick={handleUseGPS} disabled={geoStatus === 'loading'} style={styles.button}>
-          {geoStatus === 'loading' ? 'Localizando...' : 'Usar minha localiza\u00e7\u00e3o (GPS)'}
+          {geoStatus === 'loading' ? t('locating') : t('use_gps')}
         </button>
 
         <div style={styles.row}>
           <input
             type="text"
-            placeholder="Ou digite uma cidade..."
+            placeholder={t('city_placeholder')}
             value={cityQuery}
             onChange={(e) => setCityQuery(e.target.value)}
             style={styles.input}
@@ -115,13 +116,13 @@ export function App({ bridge, state }: AppProps) {
 
         {location && (
           <p style={styles.info}>
-            Atual: {location.label ?? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`}
+            {location.label ?? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`}
           </p>
         )}
       </section>
 
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Raio de busca: {(radius / 1000).toFixed(1)} km</h2>
+        <h2 style={styles.sectionTitle}>{t('search_radius')}: {(radius / 1000).toFixed(1)} km</h2>
         <input
           type="range"
           min={500}
@@ -138,21 +139,18 @@ export function App({ bridge, state }: AppProps) {
       </section>
 
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Categorias dispon\u00edveis</h2>
+        <h2 style={styles.sectionTitle}>{t('categories_title')}</h2>
         <ul style={styles.list}>
           {CATEGORY_MENU.map((c) => (
             <li key={c.category} style={styles.listItem}>
-              {c.label}
+              {t(c.labelKey)}
             </li>
           ))}
         </ul>
       </section>
 
       <section style={styles.section}>
-        <p style={styles.hint}>
-          Use os \u00f3culos para navegar: swipe para scroll, tap para selecionar,
-          double-tap para voltar ao menu.
-        </p>
+        <p style={styles.hint}>{t('usage_hint')}</p>
       </section>
     </div>
   )
@@ -168,97 +166,31 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: '#1a1a1a',
     minHeight: '100vh',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 700,
-    margin: '0 0 4px',
-    color: '#ffffff',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#888',
-    margin: '0 0 24px',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 600,
-    marginBottom: 12,
-    color: '#ccc',
-  },
+  title: { fontSize: 28, fontWeight: 700, margin: '0 0 4px', color: '#fff' },
+  subtitle: { fontSize: 14, color: '#888', margin: '0 0 24px' },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 16, fontWeight: 600, marginBottom: 12, color: '#ccc' },
   button: {
-    width: '100%',
-    padding: '12px 16px',
-    fontSize: 15,
-    fontWeight: 600,
-    border: 'none',
-    borderRadius: 8,
-    backgroundColor: '#4CAF50',
-    color: '#fff',
-    cursor: 'pointer',
-    marginBottom: 12,
+    width: '100%', padding: '12px 16px', fontSize: 15, fontWeight: 600,
+    border: 'none', borderRadius: 8, backgroundColor: '#4CAF50',
+    color: '#fff', cursor: 'pointer', marginBottom: 12,
   },
   buttonSmall: {
-    padding: '10px 16px',
-    fontSize: 14,
-    fontWeight: 600,
-    border: 'none',
-    borderRadius: 8,
-    backgroundColor: '#4CAF50',
-    color: '#fff',
-    cursor: 'pointer',
-    flexShrink: 0,
+    padding: '10px 16px', fontSize: 14, fontWeight: 600,
+    border: 'none', borderRadius: 8, backgroundColor: '#4CAF50',
+    color: '#fff', cursor: 'pointer', flexShrink: 0,
   },
-  row: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-  },
+  row: { display: 'flex', gap: 8, alignItems: 'center' },
   input: {
-    flex: 1,
-    padding: '10px 12px',
-    fontSize: 14,
-    border: '1px solid #444',
-    borderRadius: 8,
-    backgroundColor: '#2a2a2a',
-    color: '#e0e0e0',
-    outline: 'none',
+    flex: 1, padding: '10px 12px', fontSize: 14,
+    border: '1px solid #444', borderRadius: 8,
+    backgroundColor: '#2a2a2a', color: '#e0e0e0', outline: 'none',
   },
-  slider: {
-    width: '100%',
-    accentColor: '#4CAF50',
-  },
-  rangeLabels: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: 12,
-    color: '#666',
-  },
-  status: {
-    fontSize: 13,
-    color: '#aaa',
-    marginTop: 8,
-  },
-  info: {
-    fontSize: 13,
-    color: '#4CAF50',
-    marginTop: 4,
-  },
-  list: {
-    listStyle: 'none',
-    padding: 0,
-    margin: 0,
-  },
-  listItem: {
-    padding: '8px 12px',
-    borderBottom: '1px solid #333',
-    fontSize: 14,
-  },
-  hint: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 1.5,
-  },
+  slider: { width: '100%', accentColor: '#4CAF50' },
+  rangeLabels: { display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#666' },
+  status: { fontSize: 13, color: '#aaa', marginTop: 8 },
+  info: { fontSize: 13, color: '#4CAF50', marginTop: 4 },
+  list: { listStyle: 'none', padding: 0, margin: 0 },
+  listItem: { padding: '8px 12px', borderBottom: '1px solid #333', fontSize: 14 },
+  hint: { fontSize: 12, color: '#666', lineHeight: 1.5 },
 }
