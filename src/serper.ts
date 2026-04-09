@@ -22,7 +22,7 @@ interface SerperResponse {
 
 // Simple in-memory cache: query → { data, timestamp }
 const cache = new Map<string, { places: SerperPlace[]; ts: number }>()
-const CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
+const CACHE_TTL = 2 * 60 * 60 * 1000 // 2 hours
 
 function getCacheKey(query: string, lat: number, lng: number): string {
   return `${query}|${lat.toFixed(3)}|${lng.toFixed(3)}`

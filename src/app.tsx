@@ -76,17 +76,37 @@ export function App({ bridge, state }: AppProps) {
 
   const handleSetManualLocation = useCallback(async () => {
     if (!cityQuery.trim()) return
-    const loc: UserLocation = {
-      lat: 0,
-      lng: 0,
-      label: cityQuery.trim(),
+    setGeoStatus('loading')
+    setStatusMsg(t('locating'))
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityQuery.trim())}&format=json&limit=1`,
+        {
+          headers: { 'User-Agent': 'HunterG2/0.2.0' },
+        },
+      )
+      const results = await response.json()
+      if (!results || results.length === 0) {
+        setGeoStatus('error')
+        setStatusMsg(`${t('no_results')}: ${cityQuery}`)
+        return
+      }
+      const loc: UserLocation = {
+        lat: parseFloat(results[0].lat),
+        lng: parseFloat(results[0].lon),
+        label: cityQuery.trim(),
+      }
+      setLocation(loc)
+      state.userLocation = loc
+      await bridge.setLocalStorage(STORAGE_KEY_LOCATION, JSON.stringify(loc))
+      setGeoStatus('success')
+      setStatusMsg(`${t('manual_location')}: ${cityQuery} (${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)})`)
+      state.isFirstRender = false
+      renderScreen(bridge, state)
+    } catch (err) {
+      setGeoStatus('error')
+      setStatusMsg(`Geocoding failed: ${err instanceof Error ? err.message : '?'}`)
     }
-    setLocation(loc)
-    state.userLocation = loc
-    await bridge.setLocalStorage(STORAGE_KEY_LOCATION, JSON.stringify(loc))
-    setStatusMsg(`${t('manual_location')}: ${cityQuery}`)
-    state.isFirstRender = false
-    renderScreen(bridge, state)
   }, [bridge, state, cityQuery])
 
   const handleRadiusChange = useCallback(

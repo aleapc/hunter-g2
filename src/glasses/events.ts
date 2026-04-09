@@ -86,6 +86,8 @@ function parseEvent(event: EvenHubEvent): ParsedEvent {
   return { action: 'unknown' }
 }
 
+let searchAbortController: AbortController | null = null
+
 async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise<void> {
   if (!state.userLocation) {
     const errText = new TextContainerProperty({
@@ -110,8 +112,13 @@ async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise
     state.screen = 'results'
     return
   }
+
+  // Abort any previous in-flight search
+  searchAbortController?.abort()
+  const controller = new AbortController()
+  searchAbortController = controller
+
   state.isLoading = true
-  searchCancelled = false
   renderScreen(bridge, state)
 
   const subcategoryType = state.selectedSubcategory ?? undefined
@@ -136,7 +143,7 @@ async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise
     })
     places.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
 
-    if (searchCancelled) return
+    if (controller.signal.aborted) return
 
     // Enrich with Google ratings via Serper (if API key available)
     if (isSerperAvailable() && places.length > 0) {
@@ -168,13 +175,11 @@ async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise
     state.places = []
   }
 
-  if (searchCancelled) return
+  if (controller.signal.aborted) return
 
   state.isLoading = false
   state.screen = 'results'
 }
-
-let searchCancelled = false
 
 function goHome(state: HunterState): void {
   state.screen = 'categories'
@@ -183,7 +188,7 @@ function goHome(state: HunterState): void {
   state.selectedPlace = null
   state.places = []
   state.isLoading = false
-  searchCancelled = true
+  searchAbortController?.abort()
 }
 
 export function setupEventHandler(
@@ -219,7 +224,7 @@ export function setupEventHandler(
             state.screen = 'subcategories'
           } else {
             performSearch(bridge, state).then(() => {
-              if (!searchCancelled) renderScreen(bridge, state)
+              renderScreen(bridge, state)
             })
             return // don't renderScreen below — performSearch handles it
           }
@@ -232,7 +237,7 @@ export function setupEventHandler(
           if (!sub) break
           state.selectedSubcategory = sub.type
           performSearch(bridge, state).then(() => {
-            if (!searchCancelled) renderScreen(bridge, state)
+            renderScreen(bridge, state)
           })
           return
         }

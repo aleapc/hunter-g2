@@ -91,7 +91,7 @@ export async function searchNearby(
 ): Promise<Place[]> {
   const tags = subcategoryTag
     ? [subcategoryTag]
-    : CATEGORY_TO_OSM_TAGS[category]
+    : CATEGORY_TO_OSM_TAGS[category] ?? []
 
   const query = buildQuery(lat, lng, tags, radius, 20)
 

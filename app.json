@@ -2,14 +2,14 @@
   "package_id": "com.dalff.hunter",
   "edition": "202601",
   "name": "Hunter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "min_app_version": "0.1.0",
   "min_sdk_version": "0.0.9",
   "tagline": "Find nearby places at a glance",
   "description": "Discover restaurants, bars, cafes, gas stations and more — right on your glasses.",
   "author": "Dalff",
   "entrypoint": "index.html",
-  "supported_languages": ["en", "es", "pt"],
+  "supported_languages": ["en", "es"],
   "permissions": [
     {
       "name": "network",
