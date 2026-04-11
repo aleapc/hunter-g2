@@ -1,3 +1,4 @@
+import './telemetry' // self-initializes error listeners
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { createRoot } from 'react-dom/client'
 import { createElement } from 'react'
