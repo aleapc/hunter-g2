@@ -11,6 +11,7 @@ import {
   performSearchWith,
 } from './glasses/events'
 import { getUserLocation } from './utils/geo'
+import { loadFavorites } from './favorites'
 
 const state: HunterState = { ...initialState }
 
@@ -66,6 +67,11 @@ async function init() {
     const r = parseInt(savedRadius, 10)
     if (!isNaN(r)) state.searchRadius = r
   }
+
+  // Load favorites (used for the star indicator on details screen)
+  try {
+    state.favorites = await loadFavorites(bridge)
+  } catch { /* ignore */ }
 
   // Load enabled categories
   const savedCategories = await bridge.getLocalStorage('hunter_categories')

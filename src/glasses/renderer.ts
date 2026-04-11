@@ -6,6 +6,7 @@ import {
   renderResults,
   renderDetails,
   renderLoading,
+  renderRoute,
 } from './screens'
 
 export function renderScreen(bridge: EvenAppBridge, state: HunterState): void {
@@ -26,6 +27,9 @@ export function renderScreen(bridge: EvenAppBridge, state: HunterState): void {
       break
     case 'details':
       renderDetails(bridge, state)
+      break
+    case 'route':
+      renderRoute(bridge, state)
       break
   }
 }

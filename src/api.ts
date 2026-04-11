@@ -1,6 +1,8 @@
+import type { EvenAppBridge } from '@evenrealities/even_hub_sdk'
 import type { Place, PlaceCategory } from './state'
 import { CATEGORY_TO_OSM_TAGS } from './state'
 import { calculateDistance } from './utils/geo'
+import { getCached, getStale, setCached, makeCacheKey } from './cache'
 
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
@@ -174,4 +176,54 @@ export async function searchNearby(
 
   console.error('All Overpass endpoints failed:', lastError?.message)
   return []
+}
+
+type StorageBridge = Pick<EvenAppBridge, 'getLocalStorage' | 'setLocalStorage'>
+
+/**
+ * Cache-aware wrapper around searchNearby.
+ *
+ * Order of operations:
+ *   1. If a fresh (<30 min) cached entry exists, return it immediately.
+ *   2. Otherwise, hit Overpass. On success, store in cache and return.
+ *   3. On network failure (empty result), fall back to stale cache (up to 24h).
+ */
+export async function searchNearbyCached(
+  bridge: StorageBridge,
+  lat: number,
+  lng: number,
+  category: PlaceCategory,
+  radius: number = 2000,
+  subcategoryTag?: string,
+): Promise<Place[]> {
+  const key = makeCacheKey(category, lat, lng, radius, subcategoryTag)
+
+  const fresh = await getCached(bridge, key)
+  if (fresh && fresh.length > 0) {
+    // Recompute distances in case the user drifted slightly within the cache grid cell
+    fresh.forEach((p) => {
+      p.distance = calculateDistance(lat, lng, p.latitude, p.longitude)
+    })
+    fresh.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+    return fresh
+  }
+
+  const places = await searchNearby(lat, lng, category, radius, subcategoryTag)
+
+  if (places.length > 0) {
+    await setCached(bridge, key, places)
+    return places
+  }
+
+  // Empty result likely means network failure — try stale cache
+  const stale = await getStale(bridge, key)
+  if (stale && stale.length > 0) {
+    stale.forEach((p) => {
+      p.distance = calculateDistance(lat, lng, p.latitude, p.longitude)
+    })
+    stale.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+    return stale
+  }
+
+  return places
 }

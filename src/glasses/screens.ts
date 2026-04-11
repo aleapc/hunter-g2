@@ -8,13 +8,14 @@ import {
   CreateStartUpPageContainer,
   RebuildPageContainer,
 } from '@evenrealities/even_hub_sdk'
-import type { HunterState } from '../state'
+import type { HunterState, Place } from '../state'
 import { RESTAURANT_SUBCATEGORIES, getCategoryLabel, getCategoryDisplayLabel, getSubcategoryLabel, getEnabledMenu } from '../state'
 import { formatDistance, formatRating, formatPriceLevel, truncate } from '../utils/format'
 import { getCardinalDirection, getDirectionArrow } from '../utils/geo'
 import { t } from '../i18n'
 import * as L from './layout'
 import { generateIconPNG, hasIcon, ICON_IMG_W, ICON_IMG_H } from './icons'
+import { formatStepLabel, formatStepDistance, formatStepDuration } from '../routing'
 
 let detailImageBusy = false
 
@@ -133,11 +134,6 @@ export function renderResults(
   bridge: EvenAppBridge,
   state: HunterState,
 ): void {
-  const catLabel = getCategoryLabel(state.selectedCategory!)
-  const subLabel = state.selectedSubcategory
-    ? ` ${getSubcategoryLabel(state.selectedSubcategory)}`
-    : ''
-  const radiusKm = (state.searchRadius / 1000).toFixed(1)
   let batterySuffix = ''
   if (state.batteryLevel != null) {
     batterySuffix =
@@ -145,7 +141,19 @@ export function renderResults(
         ? `  [!${state.batteryLevel}%]`
         : `  [${state.batteryLevel}%]`
   }
-  const header = makeHeader(`${catLabel}${subLabel} < ${radiusKm}km${batterySuffix}`)
+
+  let headerText: string
+  if (state.viewMode === 'favorites') {
+    headerText = `* Favorites (${state.places.length})${batterySuffix}`
+  } else {
+    const catLabel = getCategoryLabel(state.selectedCategory!)
+    const subLabel = state.selectedSubcategory
+      ? ` ${getSubcategoryLabel(state.selectedSubcategory)}`
+      : ''
+    const radiusKm = (state.searchRadius / 1000).toFixed(1)
+    headerText = `${catLabel}${subLabel} < ${radiusKm}km${batterySuffix}`
+  }
+  const header = makeHeader(headerText)
 
   const items =
     state.places.length > 0
@@ -189,15 +197,18 @@ export async function renderDetails(
   const openStatus =
     place.isOpen === true ? t('open') : place.isOpen === false ? t('closed') : ''
   const catLabel = getCategoryLabel(place.category)
+  const fav = state.favorites.some((p: Place) => p.id === place.id) ? '*' : '.'
+  const nameLine = `${fav} ${place.name}`
 
   const lines = [
-    place.name,
+    nameLine,
     `${rating} ${reviews}`,
     [catLabel, price].filter(Boolean).join(' \u00B7 '),
     place.address ?? '',
     [dist, direction, arrow].filter(Boolean).join(' '),
     openStatus,
     '',
+    '2x=fav  3x=nav',
     t('back_hint'),
   ]
 
@@ -317,6 +328,65 @@ export async function renderDetails(
     paddingLength: 8,
     containerID: 0,
     containerName: 'detail',
+    content: lines.join('\n'),
+    isEventCapture: 1,
+  })
+
+  sendPage(bridge, false, { textObject: [text] })
+}
+
+export function renderRoute(bridge: EvenAppBridge, state: HunterState): void {
+  const route = state.currentRoute
+  const place = state.selectedPlace
+  if (!route || !place) {
+    const err = new TextContainerProperty({
+      xPosition: 0,
+      yPosition: 0,
+      width: L.DISPLAY_WIDTH,
+      height: L.DISPLAY_HEIGHT,
+      borderWidth: 0,
+      borderColor: 0,
+      paddingLength: L.PADDING,
+      containerID: 0,
+      containerName: 'noroute',
+      content: '\n\n  No route available',
+      isEventCapture: 1,
+    })
+    sendPage(bridge, false, { textObject: [err] })
+    return
+  }
+
+  const total = route.steps.length
+  const idx = Math.min(state.currentStep, total - 1)
+  const step = route.steps[idx]
+
+  const label = formatStepLabel(step)
+  const metrics = `${formatStepDistance(step.distance)}, ${formatStepDuration(step.duration)}`
+  const progress = `Step ${idx + 1}/${total}`
+  const totalLine = `-> ${truncate(place.name, 18)}  ${formatStepDistance(route.totalDistance)}`
+
+  const lines = [
+    totalLine,
+    '',
+    label,
+    `  ${metrics}`,
+    '',
+    progress,
+    '',
+    idx < total - 1 ? 'Tap for next' : 'Tap to exit',
+  ]
+
+  const text = new TextContainerProperty({
+    xPosition: L.PADDING,
+    yPosition: 0,
+    width: L.DISPLAY_WIDTH - L.PADDING * 2,
+    height: L.DISPLAY_HEIGHT,
+    borderWidth: 1,
+    borderColor: 8,
+    borderRadius: 4,
+    paddingLength: 8,
+    containerID: 0,
+    containerName: 'route',
     content: lines.join('\n'),
     isEventCapture: 1,
   })

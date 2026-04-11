@@ -1,8 +1,13 @@
 import { t } from './i18n'
 import type { TranslationKey } from './i18n'
+import type { Route } from './routing'
 
 // PlaceCategory is a string to allow extensibility
 export type PlaceCategory = string
+
+// Pseudo-category marking the "Favorites" menu entry at the top of the
+// category list. Not a real OSM tag — treated specially by the event handler.
+export const FAVORITES_CATEGORY = '__favorites__'
 
 export interface Place {
   id: string
@@ -18,7 +23,9 @@ export interface Place {
   isOpen?: boolean
 }
 
-export type Screen = 'categories' | 'subcategories' | 'results' | 'details'
+export type Screen = 'categories' | 'subcategories' | 'results' | 'details' | 'route'
+
+export type ViewMode = 'results' | 'favorites' | 'route'
 
 export interface UserLocation {
   lat: number
@@ -39,6 +46,10 @@ export interface HunterState {
   isFirstRender: boolean
   batteryLevel: number | null
   isWearing: boolean | null
+  favorites: Place[]
+  currentRoute: Route | null
+  currentStep: number
+  viewMode: ViewMode
 }
 
 export const DEFAULT_ENABLED_CATEGORIES: PlaceCategory[] = [
@@ -59,6 +70,10 @@ export const initialState: HunterState = {
   isFirstRender: true,
   batteryLevel: null,
   isWearing: null,
+  favorites: [],
+  currentRoute: null,
+  currentStep: 0,
+  viewMode: 'results',
 }
 
 export interface CategoryMenuItem {
@@ -120,11 +135,19 @@ export const RESTAURANT_SUBCATEGORIES: SubcategoryItem[] = [
   { labelKey: 'sub_all', type: 'amenity=restaurant' },
 ]
 
-// Get active categories in user's order
+// Virtual "Favorites" menu item, always pinned to the top of the category list.
+export const FAVORITES_MENU_ITEM: CategoryMenuItem = {
+  label: '* Favorites',
+  category: FAVORITES_CATEGORY,
+  hasSubcategories: false,
+}
+
+// Get active categories in user's order (with Favorites pinned on top).
 export function getEnabledMenu(state: HunterState): CategoryMenuItem[] {
-  return state.enabledCategories
+  const items = state.enabledCategories
     .map((cat) => ALL_CATEGORIES.find((c) => c.category === cat))
     .filter((c): c is CategoryMenuItem => c != null)
+  return [FAVORITES_MENU_ITEM, ...items]
 }
 
 // Helper to get translated label

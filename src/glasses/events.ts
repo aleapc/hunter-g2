@@ -4,12 +4,18 @@ import {
   RebuildPageContainer,
 } from '@evenrealities/even_hub_sdk'
 import type { HunterState } from '../state'
-import { RESTAURANT_SUBCATEGORIES, getEnabledMenu } from '../state'
+import {
+  RESTAURANT_SUBCATEGORIES,
+  getEnabledMenu,
+  FAVORITES_CATEGORY,
+} from '../state'
 import { t } from '../i18n'
-import { searchNearby } from '../api'
+import { searchNearbyCached } from '../api'
 import { calculateDistance } from '../utils/geo'
 import { isSerperAvailable, searchSerperPlaces, findMatchingRating } from '../serper'
 import { getCategoryLabel } from '../state'
+import { loadFavorites, toggleFavorite } from '../favorites'
+import { getWalkingRoute } from '../routing'
 import { renderScreen } from './renderer'
 
 const SCROLL_COOLDOWN = 300
@@ -141,8 +147,61 @@ export async function performSearchWith(
 ): Promise<void> {
   state.selectedCategory = category
   state.selectedSubcategory = subcategory ?? null
+  if (category === FAVORITES_CATEGORY) {
+    await showFavorites(bridge, state)
+    renderScreen(bridge, state)
+    return
+  }
   await performSearch(bridge, state)
   renderScreen(bridge, state)
+}
+
+async function showFavorites(
+  bridge: EvenAppBridge,
+  state: HunterState,
+): Promise<void> {
+  const favs = await loadFavorites(bridge)
+  if (state.userLocation) {
+    favs.forEach((p) => {
+      p.distance = calculateDistance(
+        state.userLocation!.lat,
+        state.userLocation!.lng,
+        p.latitude,
+        p.longitude,
+      )
+    })
+    favs.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+  }
+  state.favorites = favs
+  state.places = favs
+  state.viewMode = 'favorites'
+  state.screen = 'results'
+  state.isLoading = false
+}
+
+async function startWalkingRoute(
+  bridge: EvenAppBridge,
+  state: HunterState,
+): Promise<void> {
+  if (!state.userLocation || !state.selectedPlace) return
+  state.isLoading = true
+  renderScreen(bridge, state)
+  const route = await getWalkingRoute(
+    state.userLocation.lat,
+    state.userLocation.lng,
+    state.selectedPlace.latitude,
+    state.selectedPlace.longitude,
+  )
+  state.isLoading = false
+  if (route && route.steps.length > 0) {
+    state.currentRoute = route
+    state.currentStep = 0
+    state.screen = 'route'
+    state.viewMode = 'route'
+  } else {
+    // Route fetch failed — stay on details
+    state.currentRoute = null
+  }
 }
 
 async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise<void> {
@@ -182,7 +241,8 @@ async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise
   const category = state.selectedCategory!
 
   try {
-    const places = await searchNearby(
+    const places = await searchNearbyCached(
+      bridge,
       state.userLocation.lat,
       state.userLocation.lng,
       category,
@@ -245,6 +305,9 @@ function goHome(state: HunterState): void {
   state.selectedPlace = null
   state.places = []
   state.isLoading = false
+  state.currentRoute = null
+  state.currentStep = 0
+  state.viewMode = 'results'
   searchAbortController?.abort()
 }
 
@@ -271,12 +334,21 @@ export function setupEventHandler(
     if (now - lastEventTime < SCROLL_COOLDOWN) return
     lastEventTime = now
 
-    // Triple-tap detection (click x3 inside TRIPLE_TAP_WINDOW) → graceful exit
+    // Triple-tap detection (click x3 inside TRIPLE_TAP_WINDOW).
+    // On details screen, triple-tap starts walking route navigation.
+    // Elsewhere, triple-tap is a graceful exit.
     if (action === 'click') {
       tapTimestamps.push(now)
       tapTimestamps = tapTimestamps.filter((t) => now - t <= TRIPLE_TAP_WINDOW)
       if (tapTimestamps.length >= 3) {
         tapTimestamps = []
+        if (state.screen === 'details' && state.selectedPlace && state.userLocation) {
+          startWalkingRoute(bridge, state).then(() => {
+            state.isFirstRender = false
+            renderScreen(bridge, state)
+          })
+          return
+        }
         callbacks.onTripleTap?.()
         return
       }
@@ -284,12 +356,25 @@ export function setupEventHandler(
       tapTimestamps = []
     }
 
-    // Double-click always goes home (from any screen or during loading)
-    if (action === 'doubleClick' && (state.screen !== 'categories' || state.isLoading)) {
-      goHome(state)
-      state.isFirstRender = false
-      renderScreen(bridge, state)
-      return
+    // Double-click on details: toggle favorite. Elsewhere: go home.
+    if (action === 'doubleClick') {
+      if (state.screen === 'details' && state.selectedPlace) {
+        const place = state.selectedPlace
+        toggleFavorite(bridge, place).then(() => {
+          loadFavorites(bridge).then((favs) => {
+            state.favorites = favs
+            state.isFirstRender = false
+            renderScreen(bridge, state)
+          })
+        })
+        return
+      }
+      if (state.screen !== 'categories' || state.isLoading) {
+        goHome(state)
+        state.isFirstRender = false
+        renderScreen(bridge, state)
+        return
+      }
     }
 
     switch (state.screen) {
@@ -301,9 +386,18 @@ export function setupEventHandler(
           state.selectedCategory = menuItem.category
           state.selectedSubcategory = null
 
+          if (menuItem.category === FAVORITES_CATEGORY) {
+            showFavorites(bridge, state).then(() => {
+              state.isFirstRender = false
+              renderScreen(bridge, state)
+            })
+            return
+          }
+
           if (menuItem.hasSubcategories) {
             state.screen = 'subcategories'
           } else {
+            state.viewMode = 'results'
             performSearch(bridge, state).then(() => {
               renderScreen(bridge, state)
             })
@@ -338,6 +432,21 @@ export function setupEventHandler(
         if (action === 'click') {
           state.selectedPlace = null
           state.screen = 'results'
+          state.currentRoute = null
+          state.currentStep = 0
+        }
+        break
+
+      case 'route':
+        // Click advances to the next step; at the end, return to details.
+        if (action === 'click') {
+          if (state.currentRoute && state.currentStep < state.currentRoute.steps.length - 1) {
+            state.currentStep += 1
+          } else {
+            state.screen = 'details'
+            state.currentRoute = null
+            state.currentStep = 0
+          }
         }
         break
     }
