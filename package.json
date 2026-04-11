@@ -1,6 +1,6 @@
 {
   "name": "hunter-g2",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "sim": "evenhub-simulator http://localhost:5173",
     "qr": "evenhub qr",
-    "pack": "npm run build && evenhub pack app.json dist -o hunter.ehpk"
+    "pack": "npm run build && node -e \"const v=require('./package.json').version; require('child_process').execSync('evenhub pack app.json dist -o hunter-v'+v+'.ehpk', {stdio:'inherit'})\""
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.9",

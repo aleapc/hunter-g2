@@ -23,64 +23,70 @@ const EVT_DOUBLE_CLICK = 3
 
 type ParsedEvent = {
   action: 'click' | 'doubleClick' | 'scrollUp' | 'scrollDown' | 'unknown'
+  containerName?: string
   selectedIndex?: number
 }
 
+// List container names — when sysEvent/jsonData lacks currentSelectItemIndex
+// but containerName matches a list, default selectedIndex to 0 (first item).
+const LIST_CONTAINER_NAMES = new Set(['catlist', 'sublist', 'reslist'])
+
+function normalizeEventType(raw: unknown): number {
+  // eventType 0 (CLICK) is often missing from JSON — treat undefined/null as 0
+  if (raw === undefined || raw === null) return 0
+  if (typeof raw === 'number') return raw
+  if (typeof raw === 'string') return parseInt(raw, 10) || 0
+  return -1
+}
+
+function eventTypeToAction(evtType: number): ParsedEvent['action'] {
+  if (evtType === EVT_DOUBLE_CLICK) return 'doubleClick'
+  if (evtType === EVT_CLICK) return 'click'
+  if (evtType === EVT_SCROLL_TOP) return 'scrollUp'
+  if (evtType === EVT_SCROLL_BOTTOM) return 'scrollDown'
+  return 'unknown'
+}
+
+function parseSubEvent(sub: Record<string, unknown> | undefined): ParsedEvent | null {
+  if (!sub || typeof sub !== 'object') return null
+  const evtType = normalizeEventType(sub.eventType)
+  if (evtType < 0 || evtType > 3) return null
+  const action = eventTypeToAction(evtType)
+  const containerName = sub.containerName != null ? String(sub.containerName) : undefined
+  const rawIdx = sub.currentSelectItemIndex
+  let selectedIndex: number | undefined
+  if (typeof rawIdx === 'number') {
+    selectedIndex = rawIdx
+  } else if (typeof rawIdx === 'string') {
+    const n = parseInt(rawIdx, 10)
+    if (!Number.isNaN(n)) selectedIndex = n
+  }
+  // First-item fallback: on real hardware, the first list item may omit
+  // currentSelectItemIndex entirely. If this is a list container, default to 0.
+  if (selectedIndex == null && containerName && LIST_CONTAINER_NAMES.has(containerName)) {
+    selectedIndex = 0
+  }
+  return { action, containerName, selectedIndex }
+}
+
 function parseEvent(event: EvenHubEvent): ParsedEvent {
-  // List container events
+  const e = event as unknown as Record<string, unknown>
+
+  // Try each possible source in priority order. On real G2 hardware,
+  // tap/scroll events arrive as sysEvent (not textEvent/listEvent).
+  for (const key of ['listEvent', 'sysEvent', 'textEvent', 'jsonData']) {
+    const sub = e[key] as Record<string, unknown> | undefined
+    const parsed = parseSubEvent(sub)
+    if (parsed && parsed.action !== 'unknown') return parsed
+  }
+
+  // Legacy fallback: listEvent with only an index (no eventType) → treat as click
   if (event.listEvent) {
-    const le = event.listEvent
-    const evtType = le.eventType as number | undefined
+    const le = event.listEvent as unknown as Record<string, unknown>
     const idx = le.currentSelectItemIndex
-
-    if (evtType === EVT_DOUBLE_CLICK) {
-      return { action: 'doubleClick', selectedIndex: idx }
-    }
-    if (evtType === EVT_CLICK) {
+    if (typeof idx === 'number') {
       return { action: 'click', selectedIndex: idx }
     }
-    if (evtType === EVT_SCROLL_TOP) {
-      return { action: 'scrollUp' }
-    }
-    if (evtType === EVT_SCROLL_BOTTOM) {
-      return { action: 'scrollDown' }
-    }
-    // If eventType is missing but we have an index, treat as click
-    if (idx != null) {
-      return { action: 'click', selectedIndex: idx }
-    }
-  }
-
-  // Text container events
-  if (event.textEvent) {
-    const te = event.textEvent
-    const evtType = te.eventType as number | undefined
-
-    if (evtType === EVT_DOUBLE_CLICK) return { action: 'doubleClick' }
-    if (evtType === EVT_CLICK) return { action: 'click' }
-    if (evtType === EVT_SCROLL_TOP) return { action: 'scrollUp' }
-    if (evtType === EVT_SCROLL_BOTTOM) return { action: 'scrollDown' }
-  }
-
-  // System events
-  if (event.sysEvent) {
-    const se = event.sysEvent
-    const evtType = se.eventType as number | undefined
-
-    if (evtType === EVT_DOUBLE_CLICK) return { action: 'doubleClick' }
-    if (evtType === EVT_CLICK) return { action: 'click' }
-  }
-
-  // Fallback: check jsonData
-  if (event.jsonData) {
-    const jd = event.jsonData
-    const evtType = (jd.eventType ?? jd.Event_Type) as number | undefined
-    const idx = jd.currentSelectItemIndex as number | undefined
-
-    if (evtType === EVT_DOUBLE_CLICK) return { action: 'doubleClick', selectedIndex: idx }
-    if (evtType === EVT_CLICK) return { action: 'click', selectedIndex: idx }
-    if (evtType === EVT_SCROLL_TOP) return { action: 'scrollUp' }
-    if (evtType === EVT_SCROLL_BOTTOM) return { action: 'scrollDown' }
   }
 
   return { action: 'unknown' }
