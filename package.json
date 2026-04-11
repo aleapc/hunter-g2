@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "sim": "evenhub-simulator http://localhost:5173",
     "qr": "evenhub qr",
-    "pack": "npm run build && node -e \"const v=require('./package.json').version; require('child_process').execSync('evenhub pack app.json dist -o hunter-v'+v+'.ehpk', {stdio:'inherit'})\""
+    "pack": "npm run build && node -e \"const v=require('./package.json').version; require('child_process').execSync('evenhub pack app.json dist -o hunter-v'+v+'.ehpk', {stdio:'inherit'})\"",
+    "test": "tsx src/test-events.ts"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.9",
