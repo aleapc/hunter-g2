@@ -3,6 +3,8 @@ import {
   TextContainerProperty,
   ListContainerProperty,
   ListItemContainerProperty,
+  ImageContainerProperty,
+  ImageRawDataUpdate,
   CreateStartUpPageContainer,
   RebuildPageContainer,
 } from '@evenrealities/even_hub_sdk'
@@ -12,6 +14,9 @@ import { formatDistance, formatRating, formatPriceLevel, truncate } from '../uti
 import { getCardinalDirection, getDirectionArrow } from '../utils/geo'
 import { t } from '../i18n'
 import * as L from './layout'
+import { generateIconPNG, hasIcon, ICON_IMG_W, ICON_IMG_H } from './icons'
+
+let detailImageBusy = false
 
 function makeListContainer(
   items: string[],
@@ -55,11 +60,13 @@ function sendPage(
   opts: {
     textObject?: TextContainerProperty[]
     listObject?: ListContainerProperty[]
+    imageObject?: ImageContainerProperty[]
   },
 ): void {
   const totalNum =
     (opts.textObject?.length ?? 0) +
-    (opts.listObject?.length ?? 0)
+    (opts.listObject?.length ?? 0) +
+    (opts.imageObject?.length ?? 0)
 
   if (isFirst) {
     bridge.createStartUpPageContainer(
@@ -67,6 +74,7 @@ function sendPage(
         containerTotalNum: totalNum,
         textObject: opts.textObject,
         listObject: opts.listObject,
+        imageObject: opts.imageObject,
       }),
     )
   } else {
@@ -75,6 +83,7 @@ function sendPage(
         containerTotalNum: totalNum,
         textObject: opts.textObject,
         listObject: opts.listObject,
+        imageObject: opts.imageObject,
       }),
     )
   }
@@ -154,10 +163,10 @@ export function renderResults(
   })
 }
 
-export function renderDetails(
+export async function renderDetails(
   bridge: EvenAppBridge,
   state: HunterState,
-): void {
+): Promise<void> {
   const place = state.selectedPlace
   if (!place) return
 
@@ -185,6 +194,111 @@ export function renderDetails(
     t('back_hint'),
   ]
 
+  // Try to render with category icon on the left (proven fabioglimb/even-toolkit flow)
+  const iconBytes = hasIcon(place.category) ? generateIconPNG(place.category) : null
+
+  if (iconBytes && iconBytes.length > 0 && !detailImageBusy) {
+    detailImageBusy = true
+    try {
+      // Step 1: ensure a dummy page exists first if this is the first send
+      if (state.isFirstRender) {
+        sendPage(bridge, true, {
+          textObject: [
+            new TextContainerProperty({
+              xPosition: L.PADDING,
+              yPosition: 0,
+              width: L.DISPLAY_WIDTH - L.PADDING * 2,
+              height: L.DISPLAY_HEIGHT,
+              borderWidth: 0,
+              borderColor: 0,
+              paddingLength: L.PADDING,
+              containerID: 0,
+              containerName: 'dummy',
+              content: 'HUNTER',
+              isEventCapture: 1,
+            }),
+          ],
+        })
+        await new Promise((r) => setTimeout(r, 100))
+      }
+
+      // Layout — icon on left, text on right
+      const imgX = L.PADDING + 4
+      const imgY = Math.floor((L.DISPLAY_HEIGHT - ICON_IMG_H) / 2)
+      const textX = imgX + ICON_IMG_W + 12
+      const textW = L.DISPLAY_WIDTH - textX - L.PADDING
+
+      const textContainer = new TextContainerProperty({
+        xPosition: textX,
+        yPosition: L.PADDING,
+        width: textW,
+        height: L.DISPLAY_HEIGHT - L.PADDING * 2,
+        borderWidth: 1,
+        borderColor: 8,
+        borderRadius: 4,
+        paddingLength: 6,
+        containerID: 0,
+        containerName: 'detail',
+        content: lines.join('\n'),
+        isEventCapture: 1,
+      })
+
+      const imageContainer = new ImageContainerProperty({
+        xPosition: imgX,
+        yPosition: imgY,
+        width: ICON_IMG_W,
+        height: ICON_IMG_H,
+        containerID: 1,
+        containerName: 'icon',
+      })
+
+      // Step 2: rebuild declaring the image container
+      sendPage(bridge, false, {
+        textObject: [textContainer],
+        imageObject: [imageContainer],
+      })
+
+      // Step 3: small delay before pushing raw image data
+      await new Promise((r) => setTimeout(r, 100))
+
+      // Step 4: push the PNG bytes
+      try {
+        const result = await bridge.updateImageRawData(
+          new ImageRawDataUpdate({
+            containerID: 1,
+            containerName: 'icon',
+            imageData: iconBytes,
+          }),
+        )
+        if (result && typeof result === 'string' && result !== 'success') {
+          console.warn('updateImageRawData returned:', result)
+        }
+      } catch (e) {
+        console.error('updateImageRawData failed:', e)
+        // Fall back to text-only view
+        const fallback = new TextContainerProperty({
+          xPosition: L.PADDING,
+          yPosition: 0,
+          width: L.DISPLAY_WIDTH - L.PADDING * 2,
+          height: L.DISPLAY_HEIGHT,
+          borderWidth: 1,
+          borderColor: 8,
+          borderRadius: 4,
+          paddingLength: 8,
+          containerID: 0,
+          containerName: 'detail',
+          content: lines.join('\n'),
+          isEventCapture: 1,
+        })
+        sendPage(bridge, false, { textObject: [fallback] })
+      }
+    } finally {
+      detailImageBusy = false
+    }
+    return
+  }
+
+  // Fallback: text-only details (no icon available)
   const text = new TextContainerProperty({
     xPosition: L.PADDING,
     yPosition: 0,

@@ -82,6 +82,34 @@ ${filters}
 out body ${limit};`
 }
 
+/**
+ * Fetch with exponential backoff retry (500ms, 1000ms, 2000ms).
+ * Throws on final failure. Pattern from openclaw-g2-hud.
+ */
+async function fetchWithRetry(
+  url: string,
+  opts: RequestInit,
+  maxAttempts = 3,
+): Promise<Response> {
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const resp = await fetch(url, opts)
+      if (resp.ok) return resp
+      lastError = new Error(`HTTP ${resp.status}`)
+      console.warn(`fetchWithRetry attempt ${attempt + 1}/${maxAttempts} to ${url}: ${lastError.message}`)
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e))
+      console.warn(`fetchWithRetry attempt ${attempt + 1}/${maxAttempts} to ${url}: ${lastError.message}`)
+    }
+    // Exponential backoff: 500ms, 1000ms, 2000ms
+    if (attempt < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)))
+    }
+  }
+  throw lastError ?? new Error('fetchWithRetry failed')
+}
+
 export async function searchNearby(
   lat: number,
   lng: number,
@@ -97,27 +125,25 @@ export async function searchNearby(
 
   let lastError: Error | null = null
 
+  // Retry 3 times per endpoint (with exponential backoff) before rotating.
   for (let attempt = 0; attempt < OVERPASS_ENDPOINTS.length; attempt++) {
     const endpoint = getEndpoint()
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 12_000)
 
     try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 12_000)
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: controller.signal,
-      })
+      const response = await fetchWithRetry(
+        endpoint,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: controller.signal,
+        },
+        3,
+      )
 
       clearTimeout(timeout)
-
-      if (!response.ok) {
-        console.warn(`Overpass ${endpoint} returned ${response.status}`)
-        rotateEndpoint()
-        continue
-      }
 
       const contentType = response.headers.get('content-type') ?? ''
       if (!contentType.includes('json')) {
@@ -139,8 +165,9 @@ export async function searchNearby(
 
       return places
     } catch (err) {
+      clearTimeout(timeout)
       lastError = err instanceof Error ? err : new Error(String(err))
-      console.warn(`Overpass ${endpoint} failed:`, lastError.message)
+      console.warn(`Overpass ${endpoint} exhausted retries:`, lastError.message)
       rotateEndpoint()
     }
   }
