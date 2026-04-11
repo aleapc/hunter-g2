@@ -5,10 +5,50 @@ import { App } from './app'
 import { initialState } from './state'
 import type { HunterState, PlaceCategory } from './state'
 import { renderScreen } from './glasses/renderer'
-import { setupEventHandler } from './glasses/events'
+import {
+  setupEventHandler,
+  abortInFlightSearch,
+  performSearchWith,
+} from './glasses/events'
 import { getUserLocation } from './utils/geo'
 
 const state: HunterState = { ...initialState }
+
+const LAST_SEARCH_KEY = 'hunter_last_search'
+
+interface SavedSearch {
+  screen: HunterState['screen']
+  category: string | null
+  subcategory: string | null
+}
+
+async function saveLastSearch(bridge: { setLocalStorage: (k: string, v: string) => Promise<boolean> }) {
+  const snapshot: SavedSearch = {
+    screen: state.screen,
+    category: state.selectedCategory,
+    subcategory: state.selectedSubcategory,
+  }
+  try {
+    await bridge.setLocalStorage(LAST_SEARCH_KEY, JSON.stringify(snapshot))
+  } catch {
+    /* ignore */
+  }
+}
+
+async function restoreLastSearch(bridge: {
+  getLocalStorage: (k: string) => Promise<string>
+}): Promise<void> {
+  try {
+    const raw = await bridge.getLocalStorage(LAST_SEARCH_KEY)
+    if (!raw) return
+    const snap = JSON.parse(raw) as SavedSearch
+    if (snap.category) state.selectedCategory = snap.category
+    if (snap.subcategory) state.selectedSubcategory = snap.subcategory
+    if (snap.screen) state.screen = snap.screen
+  } catch {
+    /* ignore */
+  }
+}
 
 async function init() {
   const bridge = await waitForEvenAppBridge()
@@ -48,8 +88,85 @@ async function init() {
     }
   }
 
-  // Setup glasses event handler
-  setupEventHandler(bridge, state)
+  // Device info: seed battery + wearing state
+  try {
+    const device = await bridge.getDeviceInfo()
+    if (device?.status) {
+      if (typeof device.status.batteryLevel === 'number') {
+        state.batteryLevel = device.status.batteryLevel
+      }
+      if (typeof device.status.isWearing === 'boolean') {
+        state.isWearing = device.status.isWearing
+      }
+    }
+  } catch (err) {
+    console.warn('getDeviceInfo failed:', err)
+  }
+
+  // Subscribe to live status changes
+  try {
+    bridge.onDeviceStatusChanged((status) => {
+      let changed = false
+      if (typeof status.batteryLevel === 'number' && status.batteryLevel !== state.batteryLevel) {
+        state.batteryLevel = status.batteryLevel
+        changed = true
+      }
+      if (typeof status.isWearing === 'boolean' && status.isWearing !== state.isWearing) {
+        state.isWearing = status.isWearing
+        changed = true
+      }
+      // If battery changed and we're currently on results, refresh the header
+      if (changed && state.screen === 'results' && !state.isLoading) {
+        renderScreen(bridge, state)
+      }
+    })
+  } catch (err) {
+    console.warn('onDeviceStatusChanged subscribe failed:', err)
+  }
+
+  // Setup glasses event handler with lifecycle + triple-tap callbacks
+  setupEventHandler(bridge, state, {
+    onForegroundExit: () => {
+      // Cancel any in-flight search and persist state so we can resume later
+      abortInFlightSearch()
+      saveLastSearch(bridge)
+    },
+    onForegroundEnter: () => {
+      restoreLastSearch(bridge).then(() => {
+        renderScreen(bridge, state)
+      })
+    },
+    onTripleTap: () => {
+      try {
+        bridge.shutDownPageContainer(0)
+      } catch (err) {
+        console.warn('shutDownPageContainer failed:', err)
+      }
+    },
+  })
+
+  // Launch source handling: if invoked from glasses menu, auto-search nearest
+  // of the default category (first enabled category without subcategories).
+  let autoSearched = false
+  try {
+    bridge.onLaunchSource((source) => {
+      if (source === 'glassesMenu' && !autoSearched) {
+        autoSearched = true
+        const defaultCat =
+          state.enabledCategories.find(
+            (c) => c !== 'restaurant',
+          ) ?? state.enabledCategories[0]
+        if (defaultCat && state.userLocation) {
+          performSearchWith(bridge, state, defaultCat).catch((err) => {
+            console.warn('auto-search failed:', err)
+          })
+          return
+        }
+      }
+    })
+  } catch (err) {
+    console.warn('onLaunchSource subscribe failed:', err)
+  }
 
   // Render initial screen on glasses
   renderScreen(bridge, state)

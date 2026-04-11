@@ -20,11 +20,30 @@ const EVT_CLICK = 0
 const EVT_SCROLL_TOP = 1
 const EVT_SCROLL_BOTTOM = 2
 const EVT_DOUBLE_CLICK = 3
+const EVT_FOREGROUND_ENTER = 4
+const EVT_FOREGROUND_EXIT = 5
 
 type ParsedEvent = {
-  action: 'click' | 'doubleClick' | 'scrollUp' | 'scrollDown' | 'unknown'
+  action:
+    | 'click'
+    | 'doubleClick'
+    | 'scrollUp'
+    | 'scrollDown'
+    | 'foregroundEnter'
+    | 'foregroundExit'
+    | 'unknown'
   containerName?: string
   selectedIndex?: number
+}
+
+// Triple-tap detection: 3 clicks within this window triggers graceful exit
+const TRIPLE_TAP_WINDOW = 800
+let tapTimestamps: number[] = []
+
+export interface EventHandlerCallbacks {
+  onForegroundEnter?: () => void
+  onForegroundExit?: () => void
+  onTripleTap?: () => void
 }
 
 // List container names — when sysEvent/jsonData lacks currentSelectItemIndex
@@ -35,7 +54,15 @@ function normalizeEventType(raw: unknown): number {
   // eventType 0 (CLICK) is often missing from JSON — treat undefined/null as 0
   if (raw === undefined || raw === null) return 0
   if (typeof raw === 'number') return raw
-  if (typeof raw === 'string') return parseInt(raw, 10) || 0
+  if (typeof raw === 'string') {
+    // Try numeric first
+    const n = parseInt(raw, 10)
+    if (!Number.isNaN(n)) return n
+    // Named SDK constants
+    if (raw === 'FOREGROUND_ENTER_EVENT' || raw === 'FOREGROUND_ENTER') return EVT_FOREGROUND_ENTER
+    if (raw === 'FOREGROUND_EXIT_EVENT' || raw === 'FOREGROUND_EXIT') return EVT_FOREGROUND_EXIT
+    return 0
+  }
   return -1
 }
 
@@ -44,13 +71,15 @@ function eventTypeToAction(evtType: number): ParsedEvent['action'] {
   if (evtType === EVT_CLICK) return 'click'
   if (evtType === EVT_SCROLL_TOP) return 'scrollUp'
   if (evtType === EVT_SCROLL_BOTTOM) return 'scrollDown'
+  if (evtType === EVT_FOREGROUND_ENTER) return 'foregroundEnter'
+  if (evtType === EVT_FOREGROUND_EXIT) return 'foregroundExit'
   return 'unknown'
 }
 
 function parseSubEvent(sub: Record<string, unknown> | undefined): ParsedEvent | null {
   if (!sub || typeof sub !== 'object') return null
   const evtType = normalizeEventType(sub.eventType)
-  if (evtType < 0 || evtType > 3) return null
+  if (evtType < 0 || evtType > 5) return null
   const action = eventTypeToAction(evtType)
   const containerName = sub.containerName != null ? String(sub.containerName) : undefined
   const rawIdx = sub.currentSelectItemIndex
@@ -93,6 +122,28 @@ function parseEvent(event: EvenHubEvent): ParsedEvent {
 }
 
 let searchAbortController: AbortController | null = null
+
+export function abortInFlightSearch(): void {
+  searchAbortController?.abort()
+  searchAbortController = null
+}
+
+/**
+ * Perform a single search using the currently-selected category/subcategory in
+ * state, transitioning the screen to results. Exported so main.ts can call it
+ * when launched from the glasses menu (auto-search of default category).
+ */
+export async function performSearchWith(
+  bridge: EvenAppBridge,
+  state: HunterState,
+  category: string,
+  subcategory?: string,
+): Promise<void> {
+  state.selectedCategory = category
+  state.selectedSubcategory = subcategory ?? null
+  await performSearch(bridge, state)
+  renderScreen(bridge, state)
+}
 
 async function performSearch(bridge: EvenAppBridge, state: HunterState): Promise<void> {
   if (!state.userLocation) {
@@ -200,14 +251,38 @@ function goHome(state: HunterState): void {
 export function setupEventHandler(
   bridge: EvenAppBridge,
   state: HunterState,
+  callbacks: EventHandlerCallbacks = {},
 ): void {
   bridge.onEvenHubEvent(async (event: EvenHubEvent) => {
+    const { action, selectedIndex } = parseEvent(event)
+    if (action === 'unknown') return
+
+    // Lifecycle events fire independent of the scroll cooldown.
+    if (action === 'foregroundEnter') {
+      callbacks.onForegroundEnter?.()
+      return
+    }
+    if (action === 'foregroundExit') {
+      callbacks.onForegroundExit?.()
+      return
+    }
+
     const now = Date.now()
     if (now - lastEventTime < SCROLL_COOLDOWN) return
     lastEventTime = now
 
-    const { action, selectedIndex } = parseEvent(event)
-    if (action === 'unknown') return
+    // Triple-tap detection (click x3 inside TRIPLE_TAP_WINDOW) → graceful exit
+    if (action === 'click') {
+      tapTimestamps.push(now)
+      tapTimestamps = tapTimestamps.filter((t) => now - t <= TRIPLE_TAP_WINDOW)
+      if (tapTimestamps.length >= 3) {
+        tapTimestamps = []
+        callbacks.onTripleTap?.()
+        return
+      }
+    } else {
+      tapTimestamps = []
+    }
 
     // Double-click always goes home (from any screen or during loading)
     if (action === 'doubleClick' && (state.screen !== 'categories' || state.isLoading)) {

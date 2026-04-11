@@ -138,7 +138,14 @@ export function renderResults(
     ? ` ${getSubcategoryLabel(state.selectedSubcategory)}`
     : ''
   const radiusKm = (state.searchRadius / 1000).toFixed(1)
-  const header = makeHeader(`${catLabel}${subLabel} < ${radiusKm}km`)
+  let batterySuffix = ''
+  if (state.batteryLevel != null) {
+    batterySuffix =
+      state.batteryLevel < 15
+        ? `  [!${state.batteryLevel}%]`
+        : `  [${state.batteryLevel}%]`
+  }
+  const header = makeHeader(`${catLabel}${subLabel} < ${radiusKm}km${batterySuffix}`)
 
   const items =
     state.places.length > 0

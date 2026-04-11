@@ -37,6 +37,8 @@ export interface HunterState {
   enabledCategories: PlaceCategory[]
   isLoading: boolean
   isFirstRender: boolean
+  batteryLevel: number | null
+  isWearing: boolean | null
 }
 
 export const DEFAULT_ENABLED_CATEGORIES: PlaceCategory[] = [
@@ -55,6 +57,8 @@ export const initialState: HunterState = {
   enabledCategories: [...DEFAULT_ENABLED_CATEGORIES],
   isLoading: false,
   isFirstRender: true,
+  batteryLevel: null,
+  isWearing: null,
 }
 
 export interface CategoryMenuItem {
