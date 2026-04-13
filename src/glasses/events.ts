@@ -346,6 +346,10 @@ export function setupEventHandler(
           startWalkingRoute(bridge, state).then(() => {
             state.isFirstRender = false
             renderScreen(bridge, state)
+          }).catch((e) => {
+            console.error('[events] route failed:', e)
+            state.isLoading = false
+            renderScreen(bridge, state)
           })
           return
         }
@@ -361,11 +365,13 @@ export function setupEventHandler(
       if (state.screen === 'details' && state.selectedPlace) {
         const place = state.selectedPlace
         toggleFavorite(bridge, place).then(() => {
-          loadFavorites(bridge).then((favs) => {
-            state.favorites = favs
-            state.isFirstRender = false
-            renderScreen(bridge, state)
-          })
+          return loadFavorites(bridge)
+        }).then((favs) => {
+          state.favorites = favs
+          state.isFirstRender = false
+          renderScreen(bridge, state)
+        }).catch((e) => {
+          console.error('[events] favorite toggle failed:', e)
         })
         return
       }
