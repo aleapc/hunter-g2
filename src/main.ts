@@ -131,24 +131,19 @@ async function init() {
     console.warn('onDeviceStatusChanged subscribe failed:', err)
   }
 
-  // Setup glasses event handler with lifecycle + triple-tap callbacks
+  // Setup glasses event handler with lifecycle callbacks. Double-tap on the
+  // root (categories) is the canonical graceful-exit path; triple-tap handler
+  // is no longer registered.
   setupEventHandler(bridge, state, {
-    onForegroundExit: () => {
+    onForegroundExit: async () => {
       // Cancel any in-flight search and persist state so we can resume later
       abortInFlightSearch()
-      saveLastSearch(bridge)
+      await saveLastSearch(bridge)
     },
     onForegroundEnter: () => {
       restoreLastSearch(bridge).then(() => {
         renderScreen(bridge, state)
       })
-    },
-    onTripleTap: () => {
-      try {
-        bridge.shutDownPageContainer(0)
-      } catch (err) {
-        console.warn('shutDownPageContainer failed:', err)
-      }
     },
   })
 
