@@ -346,6 +346,10 @@ export function setupEventHandler(
           startWalkingRoute(bridge, state).then(() => {
             state.isFirstRender = false
             renderScreen(bridge, state)
+          }).catch((e) => {
+            console.error('[events] route failed:', e)
+            state.isLoading = false
+            renderScreen(bridge, state)
           })
           return
         }
@@ -356,17 +360,28 @@ export function setupEventHandler(
       tapTimestamps = []
     }
 
-    // Double-click on details: toggle favorite. Elsewhere: go home.
+    // Double-click on details: toggle favorite. On categories (root): graceful
+    // shutdown via shutDownPageContainer(1). Elsewhere: go home.
     if (action === 'doubleClick') {
       if (state.screen === 'details' && state.selectedPlace) {
         const place = state.selectedPlace
         toggleFavorite(bridge, place).then(() => {
-          loadFavorites(bridge).then((favs) => {
-            state.favorites = favs
-            state.isFirstRender = false
-            renderScreen(bridge, state)
-          })
+          return loadFavorites(bridge)
+        }).then((favs) => {
+          state.favorites = favs
+          state.isFirstRender = false
+          renderScreen(bridge, state)
+        }).catch((e) => {
+          console.error('[events] favorite toggle failed:', e)
         })
+        return
+      }
+      if (state.screen === 'categories' && !state.isLoading) {
+        try {
+          await bridge.shutDownPageContainer(1)
+        } catch (err) {
+          console.warn('shutDownPageContainer failed:', err)
+        }
         return
       }
       if (state.screen !== 'categories' || state.isLoading) {

@@ -81,10 +81,8 @@ export function App({ bridge, state }: AppProps) {
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityQuery.trim())}&format=json&limit=1`,
-        {
-          headers: { 'User-Agent': 'HunterG2/0.2.0' },
-        },
       )
+      if (!response.ok) throw new Error(`nominatim ${response.status}`)
       const results = await response.json()
       if (!results || results.length === 0) {
         setGeoStatus('error')
